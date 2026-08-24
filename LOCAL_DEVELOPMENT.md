@@ -32,10 +32,11 @@ TRADING_DATABASE_URL=postgresql+psycopg://trading:你的数据库密码@127.0.0.
 TRADING_FRONTEND_ORIGIN=http://localhost:3000
 
 # 如果只通过 Swagger 测试写接口，可以改成：
-# TRADING_FRONTEND_ORIGIN=http://127.0.0.1:8000
+# TRADING_FRONTEND_ORIGIN=http://localhost:8000
 
-TRADING_PUBLIC_BASE_URL=http://127.0.0.1:8000
+TRADING_PUBLIC_BASE_URL=http://localhost:8000
 TRADING_SESSION_SECURE=false
+TRADING_SESSION_COOKIE_DOMAIN=
 
 TRADING_MINIO_ENDPOINT=127.0.0.1:9000
 TRADING_MINIO_ACCESS_KEY=trading-minio
@@ -152,10 +153,10 @@ uv run uvicorn app.main:app \
 
 启动后访问：
 
-- API：<http://127.0.0.1:8000>
-- Swagger：<http://127.0.0.1:8000/docs>
-- 存活检查：<http://127.0.0.1:8000/health/live>
-- 就绪检查：<http://127.0.0.1:8000/health/ready>
+- API：<http://localhost:8000>
+- Swagger：<http://localhost:8000/docs>
+- 存活检查：<http://localhost:8000/health/live>
+- 就绪检查：<http://localhost:8000/health/ready>
 - MinIO 控制台：<http://127.0.0.1:9001>
 
 ## 9. 登录接口检查
@@ -168,7 +169,7 @@ curl -i \
   -H 'Origin: http://localhost:3000' \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"你的登录密码"}' \
-  http://127.0.0.1:8000/api/auth/login
+  http://localhost:8000/api/auth/login
 ```
 
 使用保存的 Cookie 检查会话：
@@ -176,7 +177,7 @@ curl -i \
 ```bash
 curl -i \
   -b /tmp/trading-cloud-cookie.txt \
-  http://127.0.0.1:8000/api/auth/session
+  http://localhost:8000/api/auth/session
 ```
 
 ## 10. 常见问题
@@ -199,7 +200,12 @@ TRADING_SESSION_SECURE=false
 
 生产 HTTPS 环境必须恢复为 `true`。
 
+生产环境如果前端与 API 使用同一主域的不同子域，还需要配置共享 Cookie Domain，例如：
+
+```dotenv
+TRADING_SESSION_COOKIE_DOMAIN=example.com
+```
+
 ### `uv sync --offline --dev` 失败
 
 表示本机缓存缺少 Python 3.14、Python 包或对应平台的二进制 wheel。允许联网时执行 `uv sync --dev`；否则需要先准备完整离线缓存。
-

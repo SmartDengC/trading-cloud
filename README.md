@@ -16,7 +16,8 @@ cp .env.example .env
 
 - 将 `POSTGRES_PASSWORD` 改成强密码，并同步修改 `TRADING_DATABASE_URL` 中的密码。
 - 将 `MINIO_ROOT_PASSWORD` 改成强密码，并同步修改 `TRADING_MINIO_SECRET_KEY`。
-- 本地开发使用 `TRADING_FRONTEND_ORIGIN=http://localhost:3000`、`TRADING_PUBLIC_BASE_URL=http://127.0.0.1:8000`、`TRADING_SESSION_SECURE=false`。
+- 本地开发使用 `TRADING_FRONTEND_ORIGIN=http://localhost:3000`、`TRADING_PUBLIC_BASE_URL=http://localhost:8000`、`TRADING_SESSION_SECURE=false`。
+- 本地将 `TRADING_SESSION_COOKIE_DOMAIN` 留空；生产前端与 API 使用不同子域时设置为共享主域，例如 `example.com`。
 
 构建 API 镜像，并在镜像内生成管理员 Argon2 密码哈希：
 
@@ -31,11 +32,11 @@ docker compose -f compose.yaml -f compose.dev.yaml run --rm --no-deps api \
 ```bash
 docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 docker compose -f compose.yaml -f compose.dev.yaml ps
-curl http://127.0.0.1:8000/health/live
-curl http://127.0.0.1:8000/health/ready
+curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
 ```
 
-本地 API 为 `http://127.0.0.1:8000`，Swagger 为 `http://127.0.0.1:8000/docs`，MinIO 控制台为 `http://127.0.0.1:9001`。查看日志和停止服务：
+本地 API 为 `http://localhost:8000`，Swagger 为 `http://localhost:8000/docs`，MinIO 控制台为 `http://127.0.0.1:9001`。前端与 API 都应使用 `localhost`，不要混用 `127.0.0.1`。查看日志和停止服务：
 
 ```bash
 docker compose -f compose.yaml -f compose.dev.yaml logs -f migrate api

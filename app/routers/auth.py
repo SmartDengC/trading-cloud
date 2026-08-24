@@ -48,6 +48,7 @@ async def login(
         secure=settings.session_secure,
         samesite="lax",
         path="/",
+        domain=settings.session_cookie_domain,
     )
     return SessionView(logged_in=True, user=UserView(username=payload.username))
 
@@ -72,5 +73,6 @@ async def logout(
         secure=settings.session_secure,
         httponly=True,
         samesite="lax",
+        domain=settings.session_cookie_domain,
     )
     return {"loggedIn": False}

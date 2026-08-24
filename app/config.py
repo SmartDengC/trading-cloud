@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password_hash: str = ""
     session_cookie: str = "trading_session"
+    session_cookie_domain: str | None = None
     session_secure: bool = True
     session_days: int = Field(default=7, ge=1, le=90)
 
@@ -29,6 +30,11 @@ class Settings(BaseSettings):
     @classmethod
     def strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
+
+    @field_validator("session_cookie_domain", mode="before")
+    @classmethod
+    def empty_domain_is_none(cls, value: object) -> object:
+        return None if value == "" else value
 
     @property
     def sync_database_url(self) -> str:
