@@ -1,0 +1,6 @@
+services:
+  api:
+    ports:
+      - "${TRADING_API_HTTP_BIND:-0.0.0.0}:${TRADING_API_HTTP_PORT:-8000}:8000"
+  caddy:
+    profiles: [https]
