@@ -3,6 +3,7 @@ name: trading-cloud
 services:
   postgres:
     image: postgres:17.11-alpine
+    profiles: [local-infra]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-trading}
@@ -19,6 +20,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    profiles: [local-infra]
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -35,6 +37,7 @@ services:
 
   minio-init:
     image: minio/mc:latest
+    profiles: [local-infra]
     restart: "no"
     depends_on:
       minio:
@@ -52,7 +55,7 @@ services:
     networks: [backend]
 
   migrate:
-    build: .
+    image: trading-cloud-api:local
     restart: "no"
     command: ["alembic", "upgrade", "head"]
     healthcheck:
@@ -63,10 +66,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
     networks: [backend]
 
   api:
-    build: .
+    image: trading-cloud-api:local
+    build:
+      context: .
+      args:
+        UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://pypi.org/simple}
     restart: unless-stopped
     env_file:
       - path: .env
@@ -76,6 +84,7 @@ services:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
+        required: false
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"]
       interval: 10s
