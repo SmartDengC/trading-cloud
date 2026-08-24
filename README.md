@@ -78,6 +78,24 @@ docker compose logs -f migrate api caddy
 
 后续发布只需重新执行 `docker compose build api && docker compose up -d`；依赖锁文件未变化时会复用 BuildKit 缓存。
 
+临时通过服务器 IP 使用 HTTP 时，先将 `.env` 调整为：
+
+```dotenv
+TRADING_PUBLIC_BASE_URL=http://SERVER_IP:8000
+TRADING_FRONTEND_ORIGIN=http://SERVER_IP:3000
+TRADING_SESSION_SECURE=false
+TRADING_SESSION_COOKIE_DOMAIN=
+```
+
+再使用 HTTP 覆盖配置启动。该配置将 API 发布到 `0.0.0.0:8000` 并禁用 Caddy；腾讯云安全组应仅允许可信客户端 IP 访问 TCP 8000。
+
+```bash
+docker compose -f compose.yaml -f compose.http.yaml up -d --build
+curl http://SERVER_IP:8000/health/ready
+```
+
+HTTP 会明文传输登录凭据和会话，只用于临时联调。HTTPS 前端也不能调用 HTTP API，正式部署应恢复原环境变量并使用基础 Compose 配置。
+
 本地联调使用开发覆盖配置：
 
 ```bash
