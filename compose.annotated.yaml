@@ -1,0 +1,175 @@
+# ============================================================================
+# trading-cloud Docker Compose 配置（带详细注释版本）
+#
+# 这个文件定义了 trading-cloud 项目的完整容器化环境。
+# 两种使用模式：
+#   1) 本地全栈：docker compose --profile local-infra up -d --build
+#      → 启动 postgres + minio + minio-init + migrate + api + caddy
+#   2) 仅应用层：docker compose up -d --build api caddy
+#      → 只启动 api + caddy（假设 DB/S3 用外部托管服务）
+#
+# 启动顺序（由 depends_on + condition 串联）：
+#   postgres (healthy) → migrate (exit 0) ─┐
+#   minio (healthy) → minio-init (exit 0) ─┤
+#                                          ├→ api (healthy) → caddy
+# ============================================================================
+
+# 项目名称：Docker Compose 用它作为所有资源的前缀
+# 容器名会是 trading-cloud-postgres-1，网络名 trading-cloud_backend 等
+name: trading-cloud
+
+services:
+
+  # ==========================================================================
+  # postgres: PostgreSQL 17 数据库
+  # 仅在 --profile local-infra 启用时运行
+  # ==========================================================================
+  postgres:
+    image: postgres:17.11-alpine            # 锁定 17.11 小版本 + Alpine 轻量基础
+    profiles: [local-infra]                 # 属于本地基础设施 profile
+    restart: unless-stopped                 # 崩溃自动重启（除非手动 stop）
+    environment:
+      # ${VAR:-default}：未设置时用默认值
+      # ${VAR:?error}：未设置时报错退出（强制必须提供）
+      POSTGRES_DB: ${POSTGRES_DB:-trading}
+      POSTGRES_USER: ${POSTGRES_USER:-trading}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data   # 数据持久化到命名卷
+    healthcheck:
+      # $$ 转义：Compose 不插值，容器内展开为 $POSTGRES_USER
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s                         # 每 5 秒探测一次
+      timeout: 5s                          # 单次超时 5 秒
+      retries: 20                          # 连续失败 20 次（约 100s）才标记 unhealthy
+    networks: [backend]
+
+  # ==========================================================================
+  # minio: S3 兼容对象存储
+  # ==========================================================================
+  minio:
+    image: minio/minio:latest               # ⚠ 生产建议锁版本
+    profiles: [local-infra]
+    restart: unless-stopped
+    # 覆盖镜像默认命令，启动 MinIO server，数据目录 /data，控制台 :9001
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data                    # 对象存储数据持久化
+    healthcheck:
+      # MinIO 内置 curl，访问 /minio/health/live 健康端点
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  # ==========================================================================
+  # minio-init: 一次性初始化服务（创建 bucket）
+  # 跑完即退，不重启
+  # ==========================================================================
+  minio-init:
+    image: minio/mc:latest                  # MinIO Client CLI 镜像
+    profiles: [local-infra]                 # ⚠ 原文件缺这行，是个 bug
+    restart: "no"                           # 一次性任务
+    depends_on:
+      minio:
+        condition: service_healthy          # 等 minio 健康检查通过
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      TRADING_MINIO_BUCKET: ${TRADING_MINIO_BUCKET:-trading-attachments}
+    # entrypoint 改成 sh -c，下面的 command 当 shell 脚本跑
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      # 三步初始化（&& 串联，任一失败则整体失败）：
+      #   1. mc alias set local → 注册 MinIO 连接
+      #   2. mc mb --ignore-existing → 创建 bucket（已存在则跳过）
+      #   3. mc anonymous set none → 禁止匿名访问
+    networks: [backend]
+
+  # ==========================================================================
+  # migrate: 数据库迁移服务（Alembic upgrade head）
+  # 复用 API 镜像，保证迁移代码和运行时代码同源
+  # ==========================================================================
+  migrate:
+    image: trading-cloud-api:local          # 复用 API 镜像
+    pull_policy: never                      # 只用本地镜像
+    restart: "no"                           # 一次性任务
+    command: ["alembic", "upgrade", "head"] # 跑 Alembic 迁移
+    healthcheck:
+      disable: true                         # 一次性任务不需要健康检查
+    env_file:
+      - path: .env
+        required: false                     # .env 不存在也不报错
+    depends_on:
+      postgres:
+        condition: service_healthy          # 等 postgres 健康
+        required: false                     # 外部 DB 场景下 postgres 可能不存在
+    networks: [backend]
+
+  # ==========================================================================
+  # api: 业务 API 服务（FastAPI）
+  # ==========================================================================
+  api:
+    image: trading-cloud-api:local
+    pull_policy: never
+    build:
+      context: .
+      args:
+        UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://pypi.org/simple}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      migrate:
+        condition: service_completed_successfully   # 等 migrate 跑完
+      minio-init:
+        condition: service_completed_successfully   # 等 minio-init 跑完
+        required: false                             # 非必需
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  # ==========================================================================
+  # caddy: HTTPS 反向代理
+  # ==========================================================================
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      TRADING_API_DOMAIN: ${TRADING_API_DOMAIN:?set TRADING_API_DOMAIN}
+    ports:
+      - "80:80"                             # HTTP
+      - "443:443"                           # HTTPS (TCP)
+      - "443:443/udp"                       # HTTP/3 (QUIC) 需要 UDP
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro # 配置文件只读挂载
+      - caddy-data:/data                    # Caddy 证书/状态
+      - caddy-config:/config                # Caddy 自动配置
+    depends_on:
+      api:
+        condition: service_healthy          # 等 api 健康
+    networks: [backend]
+
+# ============================================================================
+# volumes: 命名卷声明（Docker 管理的持久化存储）
+# ============================================================================
+volumes:
+  postgres-data:                            # PostgreSQL 数据
+  minio-data:                               # MinIO 对象存储数据
+  caddy-data:                               # Caddy 证书/数据
+  caddy-config:                             # Caddy 配置
+
+# ============================================================================
+# networks: 自定义网络
+# ============================================================================
+networks:
+  backend:
+    driver: bridge                          # 桥接网络，容器间通过 DNS 互访
