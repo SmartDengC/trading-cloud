@@ -55,6 +55,8 @@ services:
     build: .
     restart: "no"
     command: ["alembic", "upgrade", "head"]
+    healthcheck:
+      disable: true
     env_file:
       - path: .env
         required: false

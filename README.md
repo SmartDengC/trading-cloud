@@ -4,50 +4,53 @@
 
 不使用 Docker、直接在宿主机运行 API 的步骤请参阅 [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)。
 
-## 本地启动
+## Docker 启动
 
-本地启动只需要 Docker Compose，不需要在宿主机安装 Python 或下载 Python 依赖。
+### 1. 准备 Compose
+
+```bash
+docker compose version
+```
+
+若提示 `compose is not a docker command`，先安装 [Docker Compose v2 插件](https://docs.docker.com/compose/install/linux/)。Ubuntu 20.04 默认软件源通常不提供该插件，可按官方文档手动安装。
+
+### 2. 配置环境
 
 ```bash
 cp .env.example .env
+chmod 600 .env
 ```
 
-先修改 `.env`，至少完成以下配置：
+编辑 `.env`，重点保持以下配置一致：
 
-- 将 `POSTGRES_PASSWORD` 改成强密码，并同步修改 `TRADING_DATABASE_URL` 中的密码。
-- 将 `MINIO_ROOT_PASSWORD` 改成强密码，并同步修改 `TRADING_MINIO_SECRET_KEY`。
-- 本地开发使用 `TRADING_FRONTEND_ORIGIN=http://localhost:3000`、`TRADING_PUBLIC_BASE_URL=http://localhost:8000`、`TRADING_SESSION_SECURE=false`。
-- 本地将 `TRADING_SESSION_COOKIE_DOMAIN` 留空；生产前端与 API 使用不同子域时设置为共享主域，例如 `example.com`。
+- `POSTGRES_PASSWORD` 与 `TRADING_DATABASE_URL` 中的密码相同。
+- `MINIO_ROOT_USER` 与 `TRADING_MINIO_ACCESS_KEY` 相同。
+- `MINIO_ROOT_PASSWORD` 与 `TRADING_MINIO_SECRET_KEY` 相同。
+- 生产环境填写真实域名：`TRADING_API_DOMAIN` 只写主机名，另外两个 URL 使用 HTTPS，并保持 `TRADING_SESSION_SECURE=true`。
+- 前端与 API 使用同一主域的不同子域时，将 `TRADING_SESSION_COOKIE_DOMAIN` 设为共享主域；本地开发留空。
 
-构建 API 镜像，并在镜像内生成管理员 Argon2 密码哈希：
+使用强密码替换模板值后，静默校验配置：
 
 ```bash
-docker compose -f compose.yaml -f compose.dev.yaml build api
-docker compose -f compose.yaml -f compose.dev.yaml run --rm --no-deps api \
-  python -m app.security 'your-password'
+docker compose config -q
 ```
 
-将输出写入 `.env` 的 `TRADING_ADMIN_PASSWORD_HASH`。Argon2 hash 含有 `$`，必须用单引号包住，例如 `TRADING_ADMIN_PASSWORD_HASH='$argon2id$...'`，然后启动全部本地服务：
+### 3. 生成管理员密码
 
 ```bash
-docker compose -f compose.yaml -f compose.dev.yaml up -d --build
-docker compose -f compose.yaml -f compose.dev.yaml ps
-curl http://localhost:8000/health/live
-curl http://localhost:8000/health/ready
+docker compose build api
+docker compose run --rm --no-deps api python -m app.security 'your-password'
 ```
 
-本地 API 为 `http://localhost:8000`，Swagger 为 `http://localhost:8000/docs`，MinIO 控制台为 `http://127.0.0.1:9001`。前端与 API 都应使用 `localhost`，不要混用 `127.0.0.1`。查看日志和停止服务：
+将输出写入 `.env`，Argon2 hash 必须使用单引号，避免其中的 `$` 被 Compose 展开：
 
-```bash
-docker compose -f compose.yaml -f compose.dev.yaml logs -f migrate api
-docker compose -f compose.yaml -f compose.dev.yaml down
+```dotenv
+TRADING_ADMIN_PASSWORD_HASH='$argon2id$...'
 ```
 
-首次 Docker 构建会在镜像构建环境中拉取基础镜像和锁定依赖，不会向宿主机 Python 环境安装包。
+### 4. 启动服务
 
-## 生产启动
-
-将 API 域名解析到服务器，配置 `.env` 中真实的 HTTPS 域名、前端 Origin、强密码，并保持 `TRADING_SESSION_SECURE=true`。生产环境不要叠加 `compose.dev.yaml`：
+生产环境使用 Caddy 自动配置 HTTPS，仅向公网发布 80/443：
 
 ```bash
 docker compose up -d --build
@@ -55,7 +58,17 @@ docker compose ps
 docker compose logs -f migrate api caddy
 ```
 
-PostgreSQL 和 MinIO 在生产 Compose 中不发布宿主端口，Caddy 是唯一公网入口并自动申请 HTTPS 证书。
+本地联调使用开发覆盖配置：
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+curl http://localhost:8000/health/live
+curl http://localhost:8000/health/ready
+```
+
+本地前端与 API 必须都使用 `localhost`。API 为 `http://localhost:8000`，Swagger 为 `http://localhost:8000/docs`，MinIO 控制台为 `http://127.0.0.1:9001`。
+
+API 镜像以非 root 用户 `10001:10001` 运行；生产 Compose 不发布 PostgreSQL 和 MinIO 的宿主端口。
 
 ## 数据库
 
@@ -68,18 +81,19 @@ Alembic 是生产 schema 升级入口；SQL 文件用于审阅、空库初始化
 ## 源数据迁移
 
 先启动目标 PostgreSQL/MinIO 并执行 Alembic，然后配置 `LEGACY_DATABASE_URL`、`BLOB_READ_WRITE_TOKEN` 和目标 `TRADING_DATABASE_URL`。
+以下命令使用当前宿主用户写入绑定目录，避免 Linux 上固定容器 UID 无法创建迁移报告。
 
 ```bash
 # 通过 Bearer Token 只读检查源库和全部私有 Blob
-docker compose run --rm --no-deps -v "$PWD:/reports" api \
+docker compose run --rm --no-deps --user "$(id -u):$(id -g)" -v "$PWD:/reports" api \
   python -m app.migration.legacy --report /reports/migration-report.dry-run.json
 
 # 只有 schema、目标业务表及 MinIO 桶均为空时直接导入
-docker compose run --rm --no-deps -v "$PWD:/reports" api \
+docker compose run --rm --no-deps --user "$(id -u):$(id -g)" -v "$PWD:/reports" api \
   python -m app.migration.legacy --apply --report /reports/migration-report.apply.json
 
 # Compose 初始迁移已写入默认选项，演练和最终停写切换使用显式覆盖
-docker compose run --rm --no-deps -v "$PWD:/reports" api \
+docker compose run --rm --no-deps --user "$(id -u):$(id -g)" -v "$PWD:/reports" api \
   python -m app.migration.legacy --apply --replace --report /reports/migration-report.final.json
 ```
 
@@ -90,7 +104,7 @@ docker compose run --rm --no-deps -v "$PWD:/reports" api \
 ```bash
 uv run ruff check .
 uv run mypy app
-uv run pytest
+uv run python -m pytest
 TRADING_BACKUP_DIR=/srv/trading-cloud/backups scripts/backup.sh
 scripts/verify-backup.sh /srv/trading-cloud/backups/20260823T120000Z
 ```
