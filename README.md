@@ -13,7 +13,7 @@ docker compose version
 docker buildx version
 ```
 
-若命令不存在，先安装 [Compose v2](https://docs.docker.com/compose/install/linux/) 和 [Buildx](https://github.com/docker/buildx#installing) 插件；缺少 Buildx 时依赖缓存不会生效。
+Compose v2 为必需项；[Buildx](https://github.com/docker/buildx#installing) 为可选增强。Dockerfile 同时兼容 legacy builder，并通过独立的依赖层复用普通 Docker 缓存。
 
 Linux 用户需要加入 `docker` 组后重新登录，或执行 `newgrp docker` 立即刷新权限。注意该用户组拥有 root 级权限。
 
@@ -76,7 +76,7 @@ docker compose ps
 docker compose logs -f migrate api caddy
 ```
 
-后续发布只需重新执行 `docker compose build api && docker compose up -d`；依赖锁文件未变化时会复用 BuildKit 缓存。
+后续发布只需重新执行 `docker compose build api && docker compose up -d`；依赖锁文件未变化时会复用 Docker 层缓存。
 
 临时通过服务器 IP 使用 HTTP 时，先将 `.env` 调整为：
 

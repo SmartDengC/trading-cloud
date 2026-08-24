@@ -6,11 +6,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.7.13 /uv /uvx /bin/
 WORKDIR /app
 ARG UV_DEFAULT_INDEX=https://pypi.org/simple
 ENV UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX} \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_COMPILE_BYTECODE=1
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 FROM python:3.14-slim AS runtime
 
