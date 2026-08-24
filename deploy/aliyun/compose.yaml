@@ -1,0 +1,72 @@
+name: trading-api
+
+services:
+  migrate:
+    image: trading-cloud-api:production
+    pull_policy: never
+    build:
+      context: ../..
+      args:
+        UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://pypi.org/simple}
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    healthcheck:
+      disable: true
+    mem_limit: 1250m
+    cpus: 1.5
+    networks: [backend]
+
+  api:
+    image: trading-cloud-api:production
+    pull_policy: never
+    build:
+      context: ../..
+      args:
+        UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://pypi.org/simple}
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=5).close()
+      interval: 15s
+      timeout: 8s
+      retries: 20
+      start_period: 15s
+    mem_limit: 1250m
+    cpus: 1.5
+    networks: [backend]
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      TRADING_API_DOMAIN: ${TRADING_API_DOMAIN:?set TRADING_API_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 256m
+    cpus: 0.5
+    networks: [backend]
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  backend:
+    driver: bridge

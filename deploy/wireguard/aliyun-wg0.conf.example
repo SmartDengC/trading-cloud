@@ -1,0 +1,10 @@
+[Interface]
+Address = 10.66.66.2/24
+PrivateKey = ALIYUN_PRIVATE_KEY
+SaveConfig = false
+
+[Peer]
+PublicKey = TENCENT_PUBLIC_KEY
+Endpoint = TENCENT_PUBLIC_IP:51820
+AllowedIPs = 10.66.66.1/32
+PersistentKeepalive = 25
