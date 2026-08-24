@@ -26,9 +26,9 @@ services:
       - -c
       - wal_compression=on
     ports:
-      - name: postgres-wireguard
+      - name: postgres-public
         target: 5432
-        host_ip: ${WIREGUARD_TENCENT_IP:-10.66.66.1}
+        host_ip: 0.0.0.0
         published: "5432"
         protocol: tcp
     volumes:
@@ -42,73 +42,6 @@ services:
     mem_limit: 1g
     cpus: 1.5
     shm_size: 256mb
-    networks: [data]
-
-  minio:
-    image: trading-minio:RELEASE.2025-10-15T17-29-55Z
-    pull_policy: never
-    build:
-      context: minio
-      args:
-        GOPROXY: ${MINIO_GOPROXY:-https://proxy.golang.org,direct}
-        MINIO_VERSION: RELEASE.2025-10-15T17-29-55Z
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
-    ports:
-      - name: minio-wireguard
-        target: 9000
-        host_ip: ${WIREGUARD_TENCENT_IP:-10.66.66.1}
-        published: "9000"
-        protocol: tcp
-    volumes:
-      - minio-data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 15s
-    mem_limit: 2560m
-    cpus: 2.5
-    networks: [data]
-
-  minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
-    restart: "no"
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_APP_PASSWORD: ${MINIO_APP_PASSWORD:?set MINIO_APP_PASSWORD}
-      MINIO_APP_USER: ${MINIO_APP_USER:-trading-app}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
-      TRADING_MINIO_BUCKET: ${TRADING_MINIO_BUCKET:-trading-attachments}
-    volumes:
-      - ./minio-app-policy.json:/config/minio-app-policy.json:ro
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
-        mc mb --ignore-existing "local/$$TRADING_MINIO_BUCKET" &&
-        mc anonymous set none "local/$$TRADING_MINIO_BUCKET" &&
-        sed "s/__TRADING_MINIO_BUCKET__/$$TRADING_MINIO_BUCKET/g" /config/minio-app-policy.json
-        > /tmp/minio-app-policy.json &&
-        mc admin policy create local trading-app /tmp/minio-app-policy.json &&
-        (mc admin user info local "$$MINIO_APP_USER" >/dev/null 2>&1 ||
-        mc admin user add local "$$MINIO_APP_USER" "$$MINIO_APP_PASSWORD") &&
-        mc admin policy attach local trading-app --user "$$MINIO_APP_USER"
-    mem_limit: 256m
-    cpus: 0.5
-    networks: [data]
 
 volumes:
   postgres-data:
-  minio-data:
-
-networks:
-  data:
-    driver: bridge

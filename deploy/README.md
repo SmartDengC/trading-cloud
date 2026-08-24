@@ -1,4 +1,4 @@
-# 双云生产部署
+# 双云公网部署
 
 生产拓扑固定为：
 
@@ -7,29 +7,37 @@ se.vdcc.cn (Vercel)
   /api/* -> https://hahadeng.cn/api/*
                  |
                  v
-       阿里云 Caddy + FastAPI (10.66.66.2)
-                 |
-              WireGuard
-                 |
-                 v
-       腾讯云 PostgreSQL + MinIO (10.66.66.1)
+       阿里云 Caddy + FastAPI
+          |               |
+          | 公网 HTTP     | 公网 PostgreSQL
+          v               v
+ 腾讯云现有 MinIO :9000   腾讯云 PostgreSQL :5432
+ 腾讯云 MinIO 控制台 :9001
 ```
 
-腾讯云不承载公网 Web 域名。PostgreSQL 和 MinIO 只绑定 WireGuard 地址，不要在腾讯云安全组中开放 TCP 5432、9000 或 9001。
+腾讯云上的 MinIO 是已有容器，本仓库不创建、不重启、不迁移该容器，也不管理它的数据卷、bucket、用户或策略。腾讯侧 Compose 只负责 PostgreSQL。
 
-## 1. 主机准备
+## 风险确认
 
-两台服务器均需安装 Docker Engine 和 Docker Compose v2。Docker 请按云服务器发行版使用官方安装方式；以下命令以 Debian/Ubuntu 为例安装 WireGuard 依赖：
+当前方案按明确选择执行：腾讯云安全组把 TCP 5432、9000、9001 对 `0.0.0.0/0` 开放，PostgreSQL 和 MinIO 暂不启用 TLS。这样阿里云和本地都可直接连接，但互联网中的任何地址也可以扫描和尝试登录，且数据库、附件及 MinIO 控制台流量没有传输加密。
+
+上线前必须满足：
+
+- PostgreSQL、MinIO root、MinIO 应用账号使用三个不同的长随机密码。
+- FastAPI 只使用现有 MinIO 最小权限应用账号，不使用 root 账号。
+- `trading-attachments` bucket 保持私有且已经存在。
+- 腾讯公网 IP 固定；不要给腾讯服务器配置业务域名。
+
+## 1. 服务器准备
+
+两台服务器都需要 Docker Engine 和 Docker Compose v2。先检查版本和内存：
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl wireguard
 docker compose version
+free -h
 ```
 
-中国大陆服务器如果无法拉取 Docker Hub 基础镜像，应先配置云厂商提供的 Docker 镜像加速。MinIO 源码依赖默认使用 `https://proxy.golang.org`；如该地址不可达，可在腾讯云 `.env` 中把 `MINIO_GOPROXY` 改为可信的 Go module proxy。
-
-两台 2/4 GiB 主机都应至少配置 2 GiB swap。执行前先用 `swapon --show` 和 `free -h` 检查，避免重复创建：
+阿里云 2 GiB 主机建议配置至少 2 GiB swap，避免首次构建 Python 镜像时内存不足。执行前先用 `swapon --show` 确认没有现有 swap：
 
 ```bash
 sudo fallocate -l 2G /swapfile
@@ -39,88 +47,64 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
-MinIO 社区版已经转为源码分发。本部署从官方最后的安全版本 `RELEASE.2025-10-15T17-29-55Z` 构建，不依赖第三方运行镜像。单机单盘 MinIO 不提供节点或磁盘冗余，不能把本机数据卷当作备份。
+## 2. 检查腾讯云现有 MinIO
 
-## 2. 建立 WireGuard
-
-分别在两台服务器生成密钥：
+在腾讯云服务器确认现有容器和端口映射；不要执行重建或删除命令：
 
 ```bash
-sudo install -d -m 700 /etc/wireguard
-sudo sh -c 'umask 077; wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey'
-sudo cat /etc/wireguard/publickey
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
+ss -lntp | grep -E ':(9000|9001)\b'
+curl --fail http://127.0.0.1:9000/minio/health/live
 ```
 
-用 `deploy/wireguard/tencent-wg0.conf.example` 和 `deploy/wireguard/aliyun-wg0.conf.example` 生成各自的 `/etc/wireguard/wg0.conf`，替换其中的私钥、公钥和腾讯云公网 IP。私钥及最终配置不得写入仓库，配置文件必须保持 `600` 权限：
+预期 9000 和 9001 都已发布到宿主机。另用现有应用账号确认私有 bucket 可读：
 
 ```bash
-sudo chmod 600 /etc/wireguard/wg0.conf
-sudo systemctl enable --now wg-quick@wg0
-sudo wg show
+mc alias set trading http://127.0.0.1:9000 EXISTING_MINIO_APP_USER EXISTING_MINIO_APP_PASSWORD
+mc ls trading/trading-attachments
 ```
 
-安全组规则：
+如果服务器没有安装 `mc`，可跳过这一步并通过 FastAPI 的 `/health/ready` 验证；本部署不会为此拉取或启动新的 MinIO/mc 容器。
 
-- 腾讯云入站只允许阿里云公网 IP 访问 UDP 51820；SSH 只允许管理 IP。
-- 阿里云向公网开放 TCP 80/443；如需 HTTP/3 再开放 UDP 443；SSH 只允许管理 IP。
-- 两端都不要向公网开放 TCP 5432、8000、9000、9001。
-
-Docker 发布端口时需要 `wg0` 已存在。建议两台服务器都添加 Docker 的 systemd 顺序约束：
-
-```bash
-sudo mkdir -p /etc/systemd/system/docker.service.d
-sudo cp deploy/systemd/docker-wireguard.conf /etc/systemd/system/docker.service.d/wireguard.conf
-sudo systemctl daemon-reload
-sudo systemctl restart docker
-```
-
-验证隧道：
-
-```bash
-# 腾讯云执行
-ping -c 3 10.66.66.2
-
-# 阿里云执行
-ping -c 3 10.66.66.1
-```
-
-## 3. 腾讯云数据服务
-
-在腾讯云服务器检出本仓库后执行：
+## 3. 腾讯云 PostgreSQL
 
 ```bash
 cd deploy/tencent
 cp .env.example .env
 chmod 600 .env
-```
-
-为 PostgreSQL、MinIO root 和 MinIO 应用用户生成三个不同的随机密码，例如：
-
-```bash
 openssl rand -base64 36
 ```
 
-编辑 `.env` 后校验并启动：
+把随机值写入 `POSTGRES_PASSWORD`，然后校验并启动：
 
 ```bash
 docker compose config -q
-docker compose build minio
 docker compose up -d
 docker compose ps
-docker compose logs minio-init
+docker compose logs postgres
 ```
 
-`minio-init` 正常完成后状态为 `Exited (0)`。如需轮换 `MINIO_APP_PASSWORD`，先删除旧应用用户再重新运行初始化任务；仅修改 `.env` 不会覆盖已存在用户的密码。
+腾讯侧不要执行 `docker compose down -v`，也不要使用 `--remove-orphans`；后者可能删除带有同一 Compose 项目标记的现有 MinIO 容器。
 
-确认服务只绑定隧道地址：
+确认 PostgreSQL 监听全部 IPv4 地址，同时现有 MinIO 仍保持运行：
 
 ```bash
-ss -lnt | grep -E '10\.66\.66\.1:(5432|9000)'
+ss -lntp | grep -E ':(5432|9000|9001)\b'
+docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 ```
+
+腾讯云安全组入站规则按当前选择设置：
+
+| 协议端口 | 来源 | 用途 |
+|---|---|---|
+| TCP 5432 | `0.0.0.0/0` | PostgreSQL |
+| TCP 9000 | `0.0.0.0/0` | 现有 MinIO S3 API |
+| TCP 9001 | `0.0.0.0/0` | 现有 MinIO Console |
+| TCP 22 | 管理 IP | SSH |
 
 ## 4. 阿里云 API
 
-确保 `hahadeng.cn` 的 A/AAAA 记录只指向阿里云服务器，并已完成对应的阿里云接入备案。然后执行：
+`hahadeng.cn` 继续只解析到阿里云服务器。配置：
 
 ```bash
 cd deploy/aliyun
@@ -128,46 +112,53 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-配置要求：
+替换 `.env` 中的 `TENCENT_PUBLIC_IP` 和全部凭据：
 
-- `TRADING_DATABASE_URL` 中的密码必须与腾讯云 `POSTGRES_PASSWORD` 相同；URL 特殊字符必须百分号编码。
-- `TRADING_MINIO_SECRET_KEY` 必须与腾讯云 `MINIO_APP_PASSWORD` 相同。
-- `TRADING_ADMIN_PASSWORD_HASH` 使用单引号包住完整 Argon2 hash，避免 `$` 被 Compose 展开。
-
-生成管理员密码 hash：
-
-```bash
-docker compose build api
-docker compose run --rm --no-deps api python -m app.security 'replace-with-admin-password'
+```dotenv
+TRADING_DATABASE_URL=postgresql+psycopg://trading:URL_ENCODED_POSTGRES_PASSWORD@TENCENT_PUBLIC_IP:5432/trading?sslmode=disable
+TRADING_MINIO_ENDPOINT=TENCENT_PUBLIC_IP:9000
+TRADING_MINIO_ACCESS_KEY=EXISTING_MINIO_APP_USER
+TRADING_MINIO_SECRET_KEY=EXISTING_MINIO_APP_PASSWORD
+TRADING_MINIO_BUCKET=trading-attachments
+TRADING_MINIO_SECURE=false
 ```
 
-校验、启动并查看迁移结果：
+数据库密码中的特殊字符必须百分号编码。管理员 Argon2 hash 继续使用单引号包裹，避免 `$` 被 Compose 展开。
 
 ```bash
 docker compose config -q
+docker compose build api
+docker compose run --rm --no-deps api python -m app.security 'replace-with-admin-password'
+# 将输出写入 TRADING_ADMIN_PASSWORD_HASH 后再启动
 docker compose up -d --build
 docker compose ps
 docker compose logs migrate api caddy
 curl --fail https://hahadeng.cn/health/ready
 ```
 
-API 容器没有宿主机端口映射。公网只能通过 Caddy 的 80/443 进入。
+阿里安全组只需公开 TCP 80/443；如使用 HTTP/3，再公开 UDP 443。FastAPI 的 8000 不映射到宿主机。
 
 ## 5. Vercel
 
-前端生产配置使用空的 `VITE_GLOB_API_URL`，浏览器只请求 `https://se.vdcc.cn/api/*`。仓库根目录 `vercel.json` 再将请求代理到 `https://hahadeng.cn/api/*`。
+前端保持同源配置：浏览器请求 `https://se.vdcc.cn/api/*`，Vercel Rewrite 转发到 `https://hahadeng.cn/api/*`。不需要因腾讯侧改走公网而修改前端。
 
-如果 Vercel Project Settings 中设置了 `VITE_GLOB_API_URL`，Production 值也必须设为空字符串，或直接删除该变量，让仓库内的 `.env.production` 生效。发布后检查：
+如果 Vercel Project Settings 中存在 `VITE_GLOB_API_URL`，应删除该变量或将 Production 值设为空字符串。
+
+## 6. 本地直连验证
+
+替换腾讯公网 IP 和真实凭据：
 
 ```bash
-curl -I https://se.vdcc.cn/api/auth/session
+psql 'postgresql://trading:URL_ENCODED_POSTGRES_PASSWORD@TENCENT_PUBLIC_IP:5432/trading?sslmode=disable'
+mc alias set trading http://TENCENT_PUBLIC_IP:9000 EXISTING_MINIO_APP_USER EXISTING_MINIO_APP_PASSWORD
+mc ls trading/trading-attachments
 ```
 
-未登录时返回 401 是预期结果。响应不得包含 Vercel 公共缓存命中，登录后的 Cookie 应为 `se.vdcc.cn` 的 HttpOnly、Secure、SameSite=Lax host-only Cookie。
+浏览器直接打开 `http://TENCENT_PUBLIC_IP:9001` 可访问 MinIO Console。当前是 HTTP，登录信息和控制台数据没有 TLS 保护。
 
-## 6. 手工备份与校验
+## 7. 备份与验收
 
-以下备份保存在腾讯云本机，只适合误操作恢复，不属于异地灾备：
+PostgreSQL 手工备份：
 
 ```bash
 cd deploy/tencent
@@ -175,30 +166,27 @@ set -a
 . ./.env
 set +a
 backup_dir="/srv/trading-backups/$(date -u +%Y%m%dT%H%M%SZ)"
-sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" "$backup_dir/minio"
-
+sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" "$backup_dir"
 docker compose exec -T postgres pg_dump \
-  -U "${POSTGRES_USER:-trading}" \
-  -d "${POSTGRES_DB:-trading}" \
-  --format=custom > "$backup_dir/postgres.dump"
-
-docker compose run --rm --no-deps \
-  -v "$backup_dir/minio:/backup" \
-  minio-init \
-  'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc mirror --overwrite "local/$TRADING_MINIO_BUCKET" /backup'
-
-(cd "$backup_dir" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
-(cd "$backup_dir" && sha256sum -c SHA256SUMS)
+  -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom > "$backup_dir/postgres.dump"
 docker compose exec -T postgres pg_restore --list < "$backup_dir/postgres.dump" >/dev/null
 ```
 
-上线前至少执行一次备份校验。后续应把 `/srv/trading-backups` 定期复制到另一台服务器或独立对象存储；同机数据卷和同机备份会同时受到磁盘故障影响。
+现有 MinIO 继续使用它原有的备份流程，本仓库不接管。上线验收：
 
-## 7. 验收清单
+1. 腾讯 `postgres` 健康，现有 MinIO 容器 ID 和数据卷未变化。
+2. 本地能连接公网 5432、9000、9001。
+3. 阿里 `migrate` 退出码为 0，`https://hahadeng.cn/health/ready` 返回 ready。
+4. `https://se.vdcc.cn` 能完成登录、CRUD、附件上传/读取/删除和 Excel 导出。
+5. 腾讯和阿里重启后相关容器自动恢复。
 
-1. 阿里云能连接 `10.66.66.1:5432` 和 `10.66.66.1:9000`，公网不能连接这些端口。
-2. 腾讯云 `postgres`、`minio` 健康，`minio-init` 退出码为 0。
-3. 阿里云 `migrate` 退出码为 0，`api`、`caddy` 健康。
-4. `https://hahadeng.cn/health/ready` 返回 `{"status":"ready"}`。
-5. 在 `https://se.vdcc.cn` 完成登录、CRUD、附件上传/查看/删除和 Excel 导出。
-6. 两台服务器重启后 WireGuard、Docker 和全部服务自动恢复。
+## 8. 后续迁入 WireGuard
+
+未来启用 WireGuard 时再单独实施以下变更：
+
+1. 两台服务器建立私网地址和路由。
+2. PostgreSQL 与现有 MinIO 端口改为只绑定 WireGuard 地址。
+3. 阿里 `.env` 中数据库和 MinIO endpoint 改为腾讯 WireGuard 地址。
+4. 腾讯安全组删除面向 `0.0.0.0/0` 的 5432、9000、9001 规则。
+
+当前仓库不保留半启用的 WireGuard 配置。

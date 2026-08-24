@@ -2,7 +2,7 @@
 
 `stock-exchange-reviews` 的独立 FastAPI 后端。生产环境连接外部 PostgreSQL/MinIO，Docker Compose 默认只运行迁移、API 和 Caddy；本地联调可通过 `local-infra` profile 启动内置 PostgreSQL/MinIO。
 
-腾讯云运行 PostgreSQL/MinIO、阿里云运行 API/Caddy、Vercel 同源转发 API 的生产方案见 [deploy/README.md](deploy/README.md)。
+腾讯云运行 PostgreSQL 和现有 MinIO、阿里云运行 API/Caddy、Vercel 同源转发 API 的生产方案见 [deploy/README.md](deploy/README.md)。
 
 不使用 Docker、直接在宿主机运行 API 的步骤请参阅 [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)。
 
