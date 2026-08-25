@@ -86,6 +86,33 @@ class ResearchReviewView(ApiModel):
     updated_at: str
 
 
+class TradingRuleInput(ApiModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=20000)
+    sort_order: int = Field(default=0, ge=0, le=1_000_000)
+    active: bool = True
+    version: int | None = Field(default=None, ge=1)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("标题不能为空")
+        return value
+
+
+class TradingRuleView(ApiModel):
+    id: str
+    title: str
+    description: str
+    sort_order: int
+    active: bool
+    version: int
+    created_at: str
+    updated_at: str
+
+
 class TradeInput(ApiModel):
     status: Literal["open", "closed"]
     trade_date: date

@@ -215,4 +215,21 @@ class AuthSession(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TradingRule(TimestampMixin, Base):
+    __tablename__ = "trading_rules"
+    __table_args__ = (
+        Index("idx_trading_rules_sort_order", "sort_order"),
+        Index("idx_trading_rules_active", "active"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+
 Index("trades_date_entry_idx", Trade.trade_date.desc(), Trade.entry_at.desc())
