@@ -9,13 +9,15 @@ from typing import Annotated
 
 from fastapi import Cookie, Depends, Request
 from pwdlib import PasswordHash
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.errors import ApiError
 from app.models import AuthSession
+
+SESSION_TOUCH_INTERVAL = timedelta(minutes=5)
 
 
 @lru_cache
@@ -48,8 +50,17 @@ async def current_session(
     )
     if session is None:
         raise ApiError(401, "登录已失效，请重新登录")
-    session.last_seen_at = now
-    await db.commit()
+    cutoff = now - SESSION_TOUCH_INTERVAL
+    if session.last_seen_at <= cutoff:
+        touched_id = await db.scalar(
+            update(AuthSession)
+            .where(AuthSession.id == session.id, AuthSession.last_seen_at <= cutoff)
+            .values(last_seen_at=now)
+            .returning(AuthSession.id)
+        )
+        if touched_id is not None:
+            session.last_seen_at = now
+            await db.commit()
     return session
 
 
