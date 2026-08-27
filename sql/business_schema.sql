@@ -155,4 +155,3 @@ CREATE UNIQUE INDEX auth_sessions_token_hash_uidx ON auth_sessions (token_hash);
 CREATE INDEX auth_sessions_expires_at_idx ON auth_sessions (expires_at);
 
 COMMIT;
-

@@ -19,7 +19,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -48,6 +48,40 @@ class ResearchReview(TimestampMixin, Base):
     content: Mapped[str] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Memo(TimestampMixin, Base):
+    __tablename__ = "memos"
+    __table_args__ = (Index("memos_owner_created_idx", "owner_username", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_username: Mapped[str] = mapped_column(String(120))
+    text: Mapped[str] = mapped_column(Text)
+    source_type: Mapped[str] = mapped_column(String(16), default="text", server_default="text")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attachments: Mapped[list[MemoAttachment]] = relationship(
+        back_populates="memo", cascade="all, delete-orphan"
+    )
+
+
+class MemoAttachment(TimestampMixin, Base):
+    __tablename__ = "memo_attachments"
+    __table_args__ = (Index("memo_attachments_memo_idx", "memo_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    memo_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("memos.id", ondelete="CASCADE")
+    )
+    object_key: Mapped[str] = mapped_column(Text, unique=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(120))
+    size: Mapped[int] = mapped_column(Integer)
+    memo: Mapped[Memo] = relationship(back_populates="attachments")
 
 
 class Trade(TimestampMixin, Base):

@@ -86,6 +86,43 @@ class ResearchReviewView(ApiModel):
     updated_at: str
 
 
+class MemoAttachmentView(ApiModel):
+    id: str
+    file_name: str
+    content_type: str
+    size: int
+    access_url: str
+    created_at: str
+
+
+class MemoView(ApiModel):
+    id: str
+    text: str
+    source_type: Literal["text"]
+    version: int
+    created_at: str
+    updated_at: str
+    attachments: list[MemoAttachmentView]
+
+
+class MemoListView(ApiModel):
+    items: list[MemoView]
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
+
+
+class MemoUpdate(ApiModel):
+    text: str = Field(default="", max_length=100_000)
+    version: int = Field(ge=1)
+
+    @field_validator("text")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+
 class TradingRuleInput(ApiModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=20000)
