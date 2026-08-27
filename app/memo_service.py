@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +13,13 @@ from app.models import Memo, MemoAttachment
 
 MAX_MEMO_ATTACHMENTS = 12
 MAX_MEMO_ATTACHMENT_SIZE = 20 * 1024 * 1024
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
-def validate_memo_files(text: str, files: Sequence[Any]) -> None:
+def validate_memo_files(text: str, files: Sequence[Any], existing_count: int = 0) -> None:
     if not text.strip() and not files:
         raise ValueError("正文或附件至少填写一项")
-    if len(files) > MAX_MEMO_ATTACHMENTS:
+    if existing_count + len(files) > MAX_MEMO_ATTACHMENTS:
         raise ValueError(f"每条 Memo 最多上传 {MAX_MEMO_ATTACHMENTS} 个附件")
     for file in files:
         content_type = str(getattr(file, "content_type", "") or "").lower()
@@ -52,9 +55,21 @@ def build_memo_view(memo: Memo, attachments: Sequence[MemoAttachment]) -> dict[s
 
 
 async def list_memos(
-    db: AsyncSession, owner_username: str, query: str | None, page: int, page_size: int
+    db: AsyncSession,
+    owner_username: str,
+    query: str | None,
+    page: int,
+    page_size: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> dict[str, Any]:
     conditions = [Memo.owner_username == owner_username, Memo.deleted_at.is_(None)]
+    if date_from is not None:
+        start = datetime.combine(date_from, time.min, SHANGHAI_TZ).astimezone(UTC)
+        conditions.append(Memo.created_at >= start)
+    if date_to is not None:
+        end = datetime.combine(date_to + timedelta(days=1), time.min, SHANGHAI_TZ).astimezone(UTC)
+        conditions.append(Memo.created_at < end)
     if query:
         pattern = f"%{query.strip()}%"
         conditions.append(

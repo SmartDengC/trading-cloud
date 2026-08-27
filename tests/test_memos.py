@@ -22,6 +22,12 @@ def test_validate_memo_files_rejects_audio_and_oversized_files() -> None:
         validate_memo_files("memo", [large])
 
 
+def test_validate_memo_files_counts_existing_attachments() -> None:
+    file = SimpleNamespace(filename="chart.png", content_type="image/png", size=10)
+    with pytest.raises(ValueError, match="每条 Memo 最多上传 12 个附件"):
+        validate_memo_files("memo", [file], existing_count=12)
+
+
 def test_build_memo_view_serializes_attachment_access_url() -> None:
     memo = SimpleNamespace(
         id="memo-1",

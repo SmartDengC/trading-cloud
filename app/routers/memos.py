@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import date
 from io import BytesIO
 from typing import Annotated
 from urllib.parse import quote
@@ -38,10 +39,12 @@ async def memos_index(
     session: Annotated[AuthSession, Depends(current_session)],
     db: Annotated[AsyncSession, Depends(get_db)],
     q: str | None = None,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, alias="pageSize", ge=1, le=50),
 ) -> dict[str, object]:
-    return await list_memos(db, _owner(session), q, page, page_size)
+    return await list_memos(db, _owner(session), q, page, page_size, date_from, date_to)
 
 
 @router.get("/attachments/{attachment_id}")
@@ -184,6 +187,71 @@ async def memo_update(
     row.text = payload.text
     row.version += 1
     await db.commit()
+    updated = await db.scalar(
+        select(Memo).options(selectinload(Memo.attachments)).where(Memo.id == row.id)
+    )
+    assert updated is not None
+    return build_memo_view(updated, updated.attachments)
+
+
+@router.post("/{memo_id}/attachments", response_model=MemoView, dependencies=[Depends(require_origin)])
+async def memo_upload_attachments(
+    memo_id: uuid.UUID,
+    session: Annotated[AuthSession, Depends(current_session)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    files: Annotated[list[UploadFile], File()],
+) -> dict[str, object]:
+    row = await db.scalar(
+        select(Memo)
+        .options(selectinload(Memo.attachments))
+        .where(
+            Memo.id == memo_id,
+            Memo.owner_username == _owner(session),
+            Memo.deleted_at.is_(None),
+        )
+    )
+    if row is None:
+        raise ApiError(404, "未找到 Memo")
+    validate_memo_files(row.text, files, len(row.attachments))
+    payloads: list[tuple[UploadFile, bytes]] = []
+    for file in files:
+        data = await file.read(MAX_MEMO_ATTACHMENT_SIZE + 1)
+        if len(data) > MAX_MEMO_ATTACHMENT_SIZE:
+            raise ApiError(400, "附件不能超过 20 MB")
+        file.size = len(data)
+        payloads.append((file, data))
+
+    object_keys: list[str] = []
+    try:
+        for file, data in payloads:
+            content_type = (file.content_type or "application/octet-stream").lower()
+            object_key = f"memos/{row.id}/{uuid.uuid4()}"
+            await run_in_threadpool(
+                get_minio().put_object,
+                _settings_bucket(),
+                object_key,
+                BytesIO(data),
+                len(data),
+                content_type=content_type,
+            )
+            object_keys.append(object_key)
+            db.add(
+                MemoAttachment(
+                    memo_id=row.id,
+                    object_key=object_key,
+                    file_name=(file.filename or "attachment")[:255],
+                    content_type=content_type,
+                    size=len(data),
+                )
+            )
+        row.version += 1
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        for object_key in object_keys:
+            await _remove_object(object_key)
+        raise
+
     updated = await db.scalar(
         select(Memo).options(selectinload(Memo.attachments)).where(Memo.id == row.id)
     )
