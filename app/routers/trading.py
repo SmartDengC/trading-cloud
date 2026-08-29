@@ -24,6 +24,7 @@ from app.schemas import (
     DailyReviewView,
     TradeAttachmentView,
     TradeInput,
+    TradeExecutionInput,
     TradeListView,
     TradeView,
     TradingDashboard,
@@ -48,6 +49,9 @@ from app.trading_service import (
     update_option,
     update_options,
     update_trade,
+    create_execution,
+    delete_execution,
+    update_execution,
 )
 
 router = APIRouter(prefix="/api/trading", tags=["trading"], dependencies=[Depends(current_session)])
@@ -117,6 +121,46 @@ async def trades_delete(
     version: int | None = None,
 ) -> dict[str, str | bool]:
     return await delete_trade(db, trade_id, version)
+
+
+@router.post(
+    "/trades/{trade_id}/executions",
+    response_model=TradeView,
+    dependencies=[Depends(require_origin)],
+)
+async def executions_create(
+    trade_id: uuid.UUID,
+    payload: TradeExecutionInput,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradeView:
+    return await create_execution(db, trade_id, payload)
+
+
+@router.patch(
+    "/trades/{trade_id}/executions/{execution_id}",
+    response_model=TradeView,
+    dependencies=[Depends(require_origin)],
+)
+async def executions_update(
+    trade_id: uuid.UUID,
+    execution_id: uuid.UUID,
+    payload: TradeExecutionInput,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradeView:
+    return await update_execution(db, trade_id, execution_id, payload)
+
+
+@router.delete(
+    "/trades/{trade_id}/executions/{execution_id}",
+    response_model=TradeView,
+    dependencies=[Depends(require_origin)],
+)
+async def executions_delete(
+    trade_id: uuid.UUID,
+    execution_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradeView:
+    return await delete_execution(db, trade_id, execution_id)
 
 
 @router.get("/dashboard", response_model=TradingDashboard)

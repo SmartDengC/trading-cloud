@@ -30,6 +30,54 @@ class TradeCalculation:
     is_winning: bool | None
 
 
+class ExecutionLike(Protocol):
+    action: str
+    executed_at: datetime
+    price: Decimal
+    quantity: Decimal
+    fee: Decimal
+
+
+def calculate_executions(
+    executions: list[ExecutionLike],
+    *,
+    side: str,
+    position_basis: str,
+    planned_risk_amount: Decimal | None,
+    fx_to_cny: Decimal,
+) -> TradeCalculation:
+    entries = [item for item in executions if item.action == "entry"]
+    exits = [item for item in executions if item.action == "exit"]
+    if not entries or not exits:
+        return TradeCalculation(None, None, None, None, None, None)
+
+    entry_quantity = sum((item.quantity for item in entries), Decimal(0))
+    exit_quantity = sum((item.quantity for item in exits), Decimal(0))
+    if entry_quantity <= 0 or exit_quantity <= 0:
+        raise ValueError("执行明细数量不合法")
+    entry_notional = sum((item.price * item.quantity for item in entries), Decimal(0))
+    exit_notional = sum((item.price * item.quantity for item in exits), Decimal(0))
+    average_entry = entry_notional / entry_quantity
+    average_exit = exit_notional / exit_quantity
+    direction = Decimal(1) if side == "long" else Decimal(-1)
+    delta = (average_exit - average_entry) * direction
+    matched = min(entry_quantity, exit_quantity)
+    gross = (
+        delta * matched
+        if position_basis == "quantity"
+        else delta / average_entry * matched
+    )
+    fees = sum((item.fee for item in executions), Decimal(0))
+    net = gross - fees
+    pnl_cny = net * fx_to_cny
+    r_multiple = net / planned_risk_amount if planned_risk_amount and planned_risk_amount > 0 else None
+    entry_time = min(item.executed_at for item in entries)
+    exit_time = max(item.executed_at for item in exits)
+    elapsed_minutes = Decimal(str((exit_time - entry_time).total_seconds())) / Decimal(60)
+    hold_minutes = max(0, int(elapsed_minutes.quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
+    return TradeCalculation(clean(gross), clean(net), clean(pnl_cny), clean(r_multiple), hold_minutes, net > 0)
+
+
 def clean(value: Decimal | None) -> Decimal | None:
     if value is None:
         return None

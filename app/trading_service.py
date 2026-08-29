@@ -11,12 +11,13 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.calculations import calculate_trade, decimal_string
+from app.calculations import calculate_executions, calculate_trade, decimal_string
 from app.errors import ApiError
 from app.models import (
     DailyReview,
     Trade,
     TradeAttachment,
+    TradeExecution,
     TradeErrorTag,
     TradingOption,
     TradingSetting,
@@ -30,6 +31,8 @@ from app.schemas import (
     Distribution,
     TradeAttachmentView,
     TradeInput,
+    TradeExecutionInput,
+    TradeExecutionView,
     TradeListView,
     TradeView,
     TradingDashboard,
@@ -63,6 +66,22 @@ def attachment_view(row: TradeAttachment) -> TradeAttachmentView:
     )
 
 
+def execution_view(row: TradeExecution) -> TradeExecutionView:
+    return TradeExecutionView(
+        id=str(row.id),
+        trade_id=str(row.trade_id),
+        action=cast(Literal["entry", "exit"], row.action),
+        executed_at=row.executed_at,
+        price=decimal_string(row.price) or "0",
+        quantity=decimal_string(row.quantity) or "0",
+        fee=decimal_string(row.fee) or "0",
+        reason=row.reason,
+        note=row.note,
+        created_at=iso(row.created_at) or "",
+        updated_at=iso(row.updated_at) or "",
+    )
+
+
 def option_view(row: TradingOption) -> TradingOptionView:
     """将 TradingOption 模型转换为 API 视图"""
     return TradingOptionView(
@@ -84,10 +103,15 @@ def option_view(row: TradingOption) -> TradingOptionView:
     )
 
 
-def trade_view(row: Trade, attachments: list[TradeAttachment], error_tags: list[str]) -> TradeView:
+def trade_view(
+    row: Trade,
+    attachments: list[TradeAttachment],
+    error_tags: list[str],
+    executions: list[TradeExecution],
+) -> TradeView:
     return TradeView(
         id=str(row.id),
-        status=cast(Literal["open", "closed"], row.status),
+        status=cast(Literal["open", "partially_closed", "closed"], row.status),
         trade_date=row.trade_date,
         instrument_code=row.instrument_code,
         symbol=row.symbol,
@@ -124,6 +148,7 @@ def trade_view(row: Trade, attachments: list[TradeAttachment], error_tags: list[
         created_at=iso(row.created_at) or "",
         updated_at=iso(row.updated_at) or "",
         deleted_at=iso(row.deleted_at),
+        executions=[execution_view(item) for item in executions],
     )
 
 
@@ -131,6 +156,18 @@ async def hydrate_trades(db: AsyncSession, rows: list[Trade]) -> list[TradeView]
     if not rows:
         return []
     ids = [row.id for row in rows]
+    execution_rows = list(
+        (
+            await db.scalars(
+                select(TradeExecution)
+                .where(TradeExecution.trade_id.in_(ids))
+                .order_by(TradeExecution.executed_at)
+            )
+        ).all()
+    )
+    executions: dict[uuid.UUID, list[TradeExecution]] = defaultdict(list)
+    for execution in execution_rows:
+        executions[execution.trade_id].append(execution)
     attachment_rows = list(
         (
             await db.scalars(
@@ -153,7 +190,7 @@ async def hydrate_trades(db: AsyncSession, rows: list[Trade]) -> list[TradeView]
         attachments[attachment.trade_id].append(attachment)
     for trade_id, label in tag_rows:
         tags[trade_id].append(label)
-    return [trade_view(row, attachments[row.id], tags[row.id]) for row in rows]
+    return [trade_view(row, attachments[row.id], tags[row.id], executions[row.id]) for row in rows]
 
 
 async def list_trades(
@@ -233,6 +270,7 @@ async def get_trade(db: AsyncSession, trade_id: uuid.UUID) -> TradeView | None:
 
 
 def trade_values(input_data: TradeInput) -> dict[str, Any]:
+    execution_rows = execution_models(input_data)
     values: dict[str, Any] = {
         "status": input_data.status,
         "trade_date": input_data.trade_date,
@@ -262,8 +300,42 @@ def trade_values(input_data: TradeInput) -> dict[str, Any]:
         "did_well": input_data.did_well,
         "next_improvement": input_data.next_improvement,
     }
-    candidate = Trade(**values)
-    calculation = calculate_trade(candidate)
+    if execution_rows:
+        entries = [row for row in execution_rows if row.action == "entry"]
+        exits = [row for row in execution_rows if row.action == "exit"]
+        entry_quantity = sum((row.quantity for row in entries), Decimal(0))
+        exit_quantity = sum((row.quantity for row in exits), Decimal(0))
+        if entry_quantity <= 0 or exit_quantity > entry_quantity:
+            raise ApiError(400, "出场数量不能超过当前持仓")
+        values.update(
+            entry_at=min(row.executed_at for row in entries),
+            entry_price=sum((row.price * row.quantity for row in entries), Decimal(0)) / entry_quantity,
+            entry_reason="；".join(row.reason for row in entries),
+            position_size=entry_quantity,
+            exit_at=max((row.executed_at for row in exits), default=None),
+            exit_price=(
+                sum((row.price * row.quantity for row in exits), Decimal(0)) / exit_quantity
+                if exit_quantity
+                else None
+            ),
+            exit_reason="；".join(row.reason for row in exits) or None,
+            fees=sum((row.fee for row in execution_rows), Decimal(0)),
+            status=("closed" if exit_quantity == entry_quantity else "partially_closed")
+            if exit_quantity
+            else "open",
+        )
+        calculation = calculate_executions(
+            execution_rows,
+            side=input_data.side,
+            position_basis=input_data.position_basis,
+            planned_risk_amount=Decimal(input_data.planned_risk_amount)
+            if input_data.planned_risk_amount
+            else None,
+            fx_to_cny=Decimal(input_data.fx_to_cny),
+        )
+    else:
+        candidate = Trade(**values)
+        calculation = calculate_trade(candidate)
     values.update(
         gross_pnl=calculation.gross_pnl,
         net_pnl=calculation.net_pnl,
@@ -273,6 +345,168 @@ def trade_values(input_data: TradeInput) -> dict[str, Any]:
         is_winning=calculation.is_winning,
     )
     return values
+
+
+def execution_models(input_data: TradeInput) -> list[TradeExecution]:
+    if not input_data.executions:
+        return []
+    rows: list[TradeExecution] = []
+    position = Decimal(0)
+    for item in sorted(input_data.executions, key=lambda value: value.executed_at):
+        quantity = Decimal(item.quantity)
+        position += quantity if item.action == "entry" else -quantity
+        if position < 0:
+            raise ApiError(400, "出场数量不能超过当前持仓")
+        rows.append(
+            TradeExecution(
+                action=item.action,
+                executed_at=item.executed_at,
+                price=Decimal(item.price),
+                quantity=quantity,
+                fee=Decimal(item.fee or "0"),
+                reason=item.reason,
+                note=item.note,
+            )
+        )
+    if position > 0 and input_data.status == "closed":
+        raise ApiError(400, "仍有剩余仓位，不能标记为已平仓")
+    return rows
+
+
+async def replace_executions(
+    db: AsyncSession, trade_id: uuid.UUID, input_data: TradeInput
+) -> None:
+    if input_data.executions is None:
+        return
+    rows = execution_models(input_data)
+    await db.execute(delete(TradeExecution).where(TradeExecution.trade_id == trade_id))
+    for row in rows:
+        row.trade_id = trade_id
+    db.add_all(rows)
+
+
+async def refresh_trade_from_executions(db: AsyncSession, trade: Trade) -> None:
+    rows = list(
+        (
+            await db.scalars(
+                select(TradeExecution)
+                .where(TradeExecution.trade_id == trade.id)
+                .order_by(TradeExecution.executed_at)
+            )
+        ).all()
+    )
+    if not rows:
+        return
+    entries = [row for row in rows if row.action == "entry"]
+    exits = [row for row in rows if row.action == "exit"]
+    entry_quantity = sum((row.quantity for row in entries), Decimal(0))
+    exit_quantity = sum((row.quantity for row in exits), Decimal(0))
+    if not entries or entry_quantity <= 0 or exit_quantity > entry_quantity:
+        raise ApiError(400, "执行明细数量不合法")
+    trade.entry_at = min(row.executed_at for row in entries)
+    trade.entry_price = sum((row.price * row.quantity for row in entries), Decimal(0)) / entry_quantity
+    trade.entry_reason = "；".join(row.reason for row in entries)
+    trade.position_size = entry_quantity
+    trade.exit_at = max((row.executed_at for row in exits), default=None)
+    trade.exit_price = (
+        sum((row.price * row.quantity for row in exits), Decimal(0)) / exit_quantity
+        if exit_quantity
+        else None
+    )
+    trade.exit_reason = "；".join(row.reason for row in exits) or None
+    trade.fees = sum((row.fee for row in rows), Decimal(0))
+    trade.status = "closed" if exit_quantity == entry_quantity else ("partially_closed" if exit_quantity else "open")
+    calculation = calculate_executions(
+        rows,
+        side=trade.side,
+        position_basis=trade.position_basis,
+        planned_risk_amount=trade.planned_risk_amount,
+        fx_to_cny=trade.fx_to_cny,
+    )
+    trade.gross_pnl = calculation.gross_pnl
+    trade.net_pnl = calculation.net_pnl
+    trade.pnl_cny = calculation.pnl_cny
+    trade.r_multiple = calculation.r_multiple
+    trade.hold_minutes = calculation.hold_minutes
+    trade.is_winning = calculation.is_winning
+
+
+async def create_execution(
+    db: AsyncSession, trade_id: uuid.UUID, payload: TradeExecutionInput
+) -> TradeView:
+    trade = await db.scalar(select(Trade).where(Trade.id == trade_id, Trade.deleted_at.is_(None)))
+    if trade is None:
+        raise ApiError(404, "未找到交易记录")
+    row = TradeExecution(
+        trade_id=trade_id,
+        action=payload.action,
+        executed_at=payload.executed_at,
+        price=Decimal(payload.price),
+        quantity=Decimal(payload.quantity),
+        fee=Decimal(payload.fee or "0"),
+        reason=payload.reason,
+        note=payload.note,
+    )
+    db.add(row)
+    await db.flush()
+    await refresh_trade_from_executions(db, trade)
+    await db.commit()
+    result = await get_trade(db, trade_id)
+    if result is None:
+        raise ApiError(404, "未找到交易记录")
+    return result
+
+
+async def update_execution(
+    db: AsyncSession,
+    trade_id: uuid.UUID,
+    execution_id: uuid.UUID,
+    payload: TradeExecutionInput,
+) -> TradeView:
+    row = await db.scalar(
+        select(TradeExecution).where(
+            TradeExecution.id == execution_id, TradeExecution.trade_id == trade_id
+        )
+    )
+    if row is None:
+        raise ApiError(404, "未找到执行明细")
+    row.action = payload.action
+    row.executed_at = payload.executed_at
+    row.price = Decimal(payload.price)
+    row.quantity = Decimal(payload.quantity)
+    row.fee = Decimal(payload.fee or "0")
+    row.reason = payload.reason
+    row.note = payload.note
+    trade = await db.scalar(select(Trade).where(Trade.id == trade_id, Trade.deleted_at.is_(None)))
+    if trade is None:
+        raise ApiError(404, "未找到交易记录")
+    await refresh_trade_from_executions(db, trade)
+    await db.commit()
+    result = await get_trade(db, trade_id)
+    if result is None:
+        raise ApiError(404, "未找到交易记录")
+    return result
+
+
+async def delete_execution(
+    db: AsyncSession, trade_id: uuid.UUID, execution_id: uuid.UUID
+) -> TradeView:
+    result = await db.execute(
+        delete(TradeExecution).where(
+            TradeExecution.id == execution_id, TradeExecution.trade_id == trade_id
+        )
+    )
+    if result.rowcount == 0:  # type: ignore[attr-defined]
+        raise ApiError(404, "未找到执行明细")
+    trade = await db.scalar(select(Trade).where(Trade.id == trade_id, Trade.deleted_at.is_(None)))
+    if trade is None:
+        raise ApiError(404, "未找到交易记录")
+    await refresh_trade_from_executions(db, trade)
+    await db.commit()
+    trade = await get_trade(db, trade_id)
+    if trade is None:
+        raise ApiError(404, "未找到交易记录")
+    return trade
 
 
 async def sync_error_tags(db: AsyncSession, trade_id: uuid.UUID, labels: list[str]) -> None:
@@ -302,6 +536,10 @@ async def create_trade(db: AsyncSession, input_data: TradeInput) -> TradeView:
     row = Trade(**trade_values(input_data))
     db.add(row)
     await db.flush()
+    execution_rows = execution_models(input_data)
+    for execution in execution_rows:
+        execution.trade_id = row.id
+    db.add_all(execution_rows)
     await sync_error_tags(db, row.id, input_data.error_tags)
     await db.commit()
     result = await get_trade(db, row.id)
@@ -326,6 +564,7 @@ async def update_trade(db: AsyncSession, trade_id: uuid.UUID, input_data: TradeI
         await db.rollback()
         raise ApiError(409, "记录已在其他页面更新，请重新加载")
     await sync_error_tags(db, trade_id, input_data.error_tags)
+    await replace_executions(db, trade_id, input_data)
     await db.commit()
     trade = await get_trade(db, trade_id)
     if trade is None:

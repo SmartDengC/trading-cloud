@@ -151,7 +151,7 @@ class TradingRuleView(ApiModel):
 
 
 class TradeInput(ApiModel):
-    status: Literal["open", "closed"]
+    status: Literal["open", "partially_closed", "closed"]
     trade_date: date
     instrument_code: str | None = Field(default=None, max_length=80)
     symbol: str = Field(min_length=1, max_length=160)
@@ -178,6 +178,7 @@ class TradeInput(ApiModel):
     did_well: str | None = Field(default=None, max_length=10_000)
     next_improvement: str | None = Field(default=None, max_length=10_000)
     version: int | None = Field(default=None, ge=1)
+    executions: list["TradeExecutionInput"] | None = Field(default=None, max_length=100)
 
     @field_validator("symbol", "strategy", "timeframe", "entry_reason")
     @classmethod
@@ -240,6 +241,43 @@ class TradeInput(ApiModel):
         return self
 
 
+class TradeExecutionInput(ApiModel):
+    action: Literal["entry", "exit"]
+    executed_at: datetime
+    price: str
+    quantity: str
+    fee: str | None = "0"
+    reason: str = Field(min_length=1, max_length=10_000)
+    note: str | None = Field(default=None, max_length=10_000)
+
+    @field_validator("executed_at")
+    @classmethod
+    def execution_timezone_required(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("执行时间必须包含时区")
+        return value.astimezone(UTC)
+
+    @field_validator("reason")
+    @classmethod
+    def execution_reason_required(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("执行理由不能为空")
+        return value
+
+    @field_validator("note")
+    @classmethod
+    def execution_note_optional(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_execution(self) -> "TradeExecutionInput":
+        self.price = _decimal(self.price, "成交价") or ""
+        self.quantity = _decimal(self.quantity, "成交数量") or ""
+        self.fee = _decimal(self.fee, "手续费", zero=True) or "0"
+        return self
+
+
 class TradeAttachmentView(ApiModel):
     id: str
     trade_id: str
@@ -267,6 +305,21 @@ class TradeView(TradeInput):
     created_at: str
     updated_at: str
     deleted_at: str | None
+    executions: list["TradeExecutionView"] = Field(default_factory=list)
+
+
+class TradeExecutionView(ApiModel):
+    id: str
+    trade_id: str
+    action: Literal["entry", "exit"]
+    executed_at: datetime
+    price: str
+    quantity: str
+    fee: str
+    reason: str
+    note: str | None
+    created_at: str
+    updated_at: str
 
 
 class TradeListView(ApiModel):

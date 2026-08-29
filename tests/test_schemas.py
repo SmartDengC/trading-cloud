@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import TradeInput, TradingOptionUpdate, validate_review_slug
+from app.schemas import TradeExecutionInput, TradeInput, TradingOptionUpdate, validate_review_slug
 
 
 def trade_payload() -> dict[str, object]:
@@ -85,3 +85,19 @@ def test_trading_option_update_accepts_edit_payload() -> None:
     assert value.kind == "symbol"
     assert value.label == "沪深300"
     assert value.sort_order == 50
+
+
+def test_trade_execution_input_normalizes_decimal_and_timezone() -> None:
+    value = TradeExecutionInput.model_validate(
+        {
+            "action": "entry",
+            "executedAt": "2026-07-23T09:00:00+08:00",
+            "price": "100.50",
+            "quantity": "2",
+            "fee": "0.1",
+            "reason": "突破确认",
+        }
+    )
+    assert value.price == "100.50"
+    assert value.quantity == "2"
+    assert value.executed_at.hour == 1

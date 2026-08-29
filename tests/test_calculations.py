@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from app.calculations import calculate_trade, decimal_string
+from app.calculations import calculate_executions, calculate_trade, decimal_string
 
 
 @dataclass
@@ -18,6 +18,15 @@ class SampleTrade:
     fees: Decimal = Decimal("1")
     fx_to_cny: Decimal = Decimal("7.2")
     planned_risk_amount: Decimal | None = Decimal("10")
+
+
+@dataclass
+class SampleExecution:
+    action: str
+    executed_at: datetime
+    price: Decimal
+    quantity: Decimal
+    fee: Decimal = Decimal("0")
 
 
 def test_quantity_long_calculation_matches_frontend_contract() -> None:
@@ -49,3 +58,22 @@ def test_open_trade_has_no_calculated_result() -> None:
     assert result.gross_pnl is None
     assert result.hold_minutes is None
     assert result.is_winning is None
+
+
+def test_multiple_executions_use_weighted_prices_and_all_fees() -> None:
+    executions = [
+        SampleExecution("entry", datetime(2026, 7, 23, 1, 0, tzinfo=UTC), Decimal("100"), Decimal("1")),
+        SampleExecution("entry", datetime(2026, 7, 23, 1, 10, tzinfo=UTC), Decimal("98"), Decimal("1")),
+        SampleExecution("exit", datetime(2026, 7, 23, 1, 30, tzinfo=UTC), Decimal("105"), Decimal("1"), Decimal("1")),
+        SampleExecution("exit", datetime(2026, 7, 23, 1, 45, tzinfo=UTC), Decimal("108"), Decimal("1"), Decimal("1")),
+    ]
+    result = calculate_executions(
+        executions,
+        side="long",
+        position_basis="quantity",
+        planned_risk_amount=Decimal("10"),
+        fx_to_cny=Decimal("1"),
+    )
+    assert decimal_string(result.gross_pnl) == "15"
+    assert decimal_string(result.net_pnl) == "13"
+    assert result.hold_minutes == 45
