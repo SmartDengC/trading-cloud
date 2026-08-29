@@ -132,6 +132,32 @@ class Trade(TimestampMixin, Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
+    executions: Mapped[list["TradeExecution"]] = relationship(
+        back_populates="trade", cascade="all, delete-orphan", order_by="TradeExecution.executed_at"
+    )
+
+
+class TradeExecution(TimestampMixin, Base):
+    __tablename__ = "trade_executions"
+    __table_args__ = (
+        Index("trade_executions_trade_time_idx", "trade_id", "executed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    trade_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("trades.id", ondelete="CASCADE")
+    )
+    action: Mapped[str] = mapped_column(String(8))
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    price: Mapped[Decimal] = mapped_column(Numeric(30, 10))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 10))
+    fee: Mapped[Decimal] = mapped_column(Numeric(30, 10), default=Decimal(0), server_default="0")
+    reason: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    trade: Mapped[Trade] = relationship(back_populates="executions")
+
 
 class DailyReview(TimestampMixin, Base):
     __tablename__ = "daily_reviews"

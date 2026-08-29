@@ -114,6 +114,28 @@ def test_authenticated_business_api_lifecycle() -> None:
         assert client.get("/api/trading/dashboard").status_code == 200
         options = client.get("/api/trading/options")
         assert options.status_code == 200
+        option_label = "smoke-option-delete"
+        created_option = client.patch(
+            "/api/trading/options",
+            headers=headers,
+            json={
+                "options": [
+                    {
+                        "kind": "strategy",
+                        "label": option_label,
+                        "active": True,
+                        "sortOrder": 999,
+                    }
+                ]
+            },
+        )
+        assert created_option.status_code == 200
+        option_id = next(
+            item["id"] for item in created_option.json()["options"] if item["label"] == option_label
+        )
+        deleted_option = client.delete(f"/api/trading/options/{option_id}", headers=headers)
+        assert deleted_option.status_code == 200
+        assert all(item["id"] != option_id for item in deleted_option.json()["options"])
         assert (
             client.patch(
                 "/api/trading/options",

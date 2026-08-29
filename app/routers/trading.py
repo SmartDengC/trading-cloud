@@ -24,11 +24,14 @@ from app.schemas import (
     DailyReviewView,
     TradeAttachmentView,
     TradeInput,
+    TradeExecutionInput,
     TradeListView,
     TradeView,
     TradingDashboard,
     TradingOptionsUpdate,
     TradingOptionsView,
+    TradingOptionUpdate,
+    TradingOptionView,
 )
 from app.security import current_session, require_origin
 from app.storage import get_minio, is_minio_error
@@ -36,14 +39,19 @@ from app.trading_service import (
     attachment_view,
     create_trade,
     dashboard,
+    delete_option,
     delete_trade,
     get_daily_review,
     get_options,
     get_trade,
     list_trades,
     save_daily_review,
+    update_option,
     update_options,
     update_trade,
+    create_execution,
+    delete_execution,
+    update_execution,
 )
 
 router = APIRouter(prefix="/api/trading", tags=["trading"], dependencies=[Depends(current_session)])
@@ -115,6 +123,46 @@ async def trades_delete(
     return await delete_trade(db, trade_id, version)
 
 
+@router.post(
+    "/trades/{trade_id}/executions",
+    response_model=TradeView,
+    dependencies=[Depends(require_origin)],
+)
+async def executions_create(
+    trade_id: uuid.UUID,
+    payload: TradeExecutionInput,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradeView:
+    return await create_execution(db, trade_id, payload)
+
+
+@router.patch(
+    "/trades/{trade_id}/executions/{execution_id}",
+    response_model=TradeView,
+    dependencies=[Depends(require_origin)],
+)
+async def executions_update(
+    trade_id: uuid.UUID,
+    execution_id: uuid.UUID,
+    payload: TradeExecutionInput,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradeView:
+    return await update_execution(db, trade_id, execution_id, payload)
+
+
+@router.delete(
+    "/trades/{trade_id}/executions/{execution_id}",
+    response_model=TradeView,
+    dependencies=[Depends(require_origin)],
+)
+async def executions_delete(
+    trade_id: uuid.UUID,
+    execution_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradeView:
+    return await delete_execution(db, trade_id, execution_id)
+
+
 @router.get("/dashboard", response_model=TradingDashboard)
 async def trading_dashboard(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -150,6 +198,31 @@ async def options_patch(
     payload: TradingOptionsUpdate, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> TradingOptionsView:
     return await update_options(db, payload)
+
+
+@router.patch(
+    "/options/{option_id}",
+    response_model=TradingOptionView,
+    dependencies=[Depends(require_origin)],
+)
+async def option_update(
+    option_id: uuid.UUID,
+    payload: TradingOptionUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradingOptionView:
+    """按 id 更新单条选项（所有字段可选，仅更新提供的字段）"""
+    return await update_option(db, option_id, payload)
+
+
+@router.delete(
+    "/options/{option_id}",
+    response_model=TradingOptionsView,
+    dependencies=[Depends(require_origin)],
+)
+async def option_delete(
+    option_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
+) -> TradingOptionsView:
+    return await delete_option(db, option_id)
 
 
 @router.get("/export.xlsx")
