@@ -381,6 +381,14 @@ class TradingOptionView(TradingOptionInput):
     id: str
 
 
+class TradingOptionUpdate(ApiModel):
+    """按 id 更新单条选项的入参，所有字段可选（仅更新提供的字段）"""
+    kind: Literal["strategy", "timeframe", "emotion", "error_tag", "instrument_code", "symbol"] | None = None
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+    active: bool | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=1000)
+
+
 class TradingSettingsView(ApiModel):
     default_usdt_cny_rate: str
 

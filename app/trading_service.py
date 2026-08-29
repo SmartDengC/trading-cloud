@@ -35,6 +35,7 @@ from app.schemas import (
     TradingDashboard,
     TradingOptionsUpdate,
     TradingOptionsView,
+    TradingOptionUpdate,
     TradingOptionView,
     TradingSettingsView,
 )
@@ -59,6 +60,27 @@ def attachment_view(row: TradeAttachment) -> TradeAttachmentView:
         is_cover=row.is_cover,
         file_url=f"/api/trading/files/{row.id}",
         created_at=iso(row.created_at) or "",
+    )
+
+
+def option_view(row: TradingOption) -> TradingOptionView:
+    """将 TradingOption 模型转换为 API 视图"""
+    return TradingOptionView(
+        id=str(row.id),
+        kind=cast(
+            Literal[
+                "strategy",
+                "timeframe",
+                "emotion",
+                "error_tag",
+                "instrument_code",
+                "symbol",
+            ],
+            row.kind,
+        ),
+        label=row.label,
+        active=row.active,
+        sort_order=row.sort_order,
     )
 
 
@@ -493,23 +515,7 @@ async def get_options(db: AsyncSession) -> TradingOptionsView:
     rate = await db.scalar(select(TradingSetting.value).where(TradingSetting.key == "default_usdt_cny_rate"))
     return TradingOptionsView(
         options=[
-            TradingOptionView(
-                id=str(option.id),
-                kind=cast(
-                    Literal[
-                        "strategy",
-                        "timeframe",
-                        "emotion",
-                        "error_tag",
-                        "instrument_code",
-                        "symbol",
-                    ],
-                    option.kind,
-                ),
-                label=option.label,
-                active=option.active,
-                sort_order=option.sort_order,
-            )
+            option_view(option)
             for option in options
         ],
         settings=TradingSettingsView(default_usdt_cny_rate=rate or "7.2"),
@@ -544,8 +550,34 @@ async def update_options(db: AsyncSession, payload: TradingOptionsUpdate) -> Tra
 
 async def delete_option(db: AsyncSession, option_id: uuid.UUID) -> TradingOptionsView:
     result = await db.execute(delete(TradingOption).where(TradingOption.id == option_id))
-    if result.rowcount == 0:
+    if result.rowcount == 0:  # type: ignore[attr-defined]
         await db.rollback()
         raise ApiError(404, "未找到录入字段")
     await db.commit()
     return await get_options(db)
+
+
+async def update_option(
+    db: AsyncSession, option_id: uuid.UUID, payload: TradingOptionUpdate
+) -> TradingOptionView:
+    """按 id 更新单条选项
+
+    与 update_options 的 upsert 逻辑不同，此函数严格通过 id 定位记录并更新。
+    payload 中为 None 的字段不会被修改，仅更新提供的字段。
+    """
+
+    row = await db.get(TradingOption, option_id)
+    if row is None:
+        raise ApiError(404, "未找到录入字段")
+    if payload.kind is not None:
+        row.kind = payload.kind
+    if payload.label is not None:
+        row.label = payload.label
+    if payload.active is not None:
+        row.active = payload.active
+    if payload.sort_order is not None:
+        row.sort_order = payload.sort_order
+    row.updated_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(row)
+    return option_view(row)

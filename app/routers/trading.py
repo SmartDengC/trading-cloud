@@ -29,20 +29,23 @@ from app.schemas import (
     TradingDashboard,
     TradingOptionsUpdate,
     TradingOptionsView,
+    TradingOptionUpdate,
+    TradingOptionView,
 )
 from app.security import current_session, require_origin
 from app.storage import get_minio, is_minio_error
 from app.trading_service import (
     attachment_view,
     create_trade,
-    delete_option,
     dashboard,
+    delete_option,
     delete_trade,
     get_daily_review,
     get_options,
     get_trade,
     list_trades,
     save_daily_review,
+    update_option,
     update_options,
     update_trade,
 )
@@ -153,7 +156,25 @@ async def options_patch(
     return await update_options(db, payload)
 
 
-@router.delete("/options/{option_id}", response_model=TradingOptionsView, dependencies=[Depends(require_origin)])
+@router.patch(
+    "/options/{option_id}",
+    response_model=TradingOptionView,
+    dependencies=[Depends(require_origin)],
+)
+async def option_update(
+    option_id: uuid.UUID,
+    payload: TradingOptionUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TradingOptionView:
+    """按 id 更新单条选项（所有字段可选，仅更新提供的字段）"""
+    return await update_option(db, option_id, payload)
+
+
+@router.delete(
+    "/options/{option_id}",
+    response_model=TradingOptionsView,
+    dependencies=[Depends(require_origin)],
+)
 async def option_delete(
     option_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> TradingOptionsView:

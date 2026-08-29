@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import TradeInput, validate_review_slug
+from app.schemas import TradeInput, TradingOptionUpdate, validate_review_slug
 
 
 def trade_payload() -> dict[str, object]:
@@ -68,3 +68,20 @@ def test_review_slug_rules() -> None:
     validate_review_slug("weekly", "2026-W34")
     with pytest.raises(ValueError, match="复盘类型或编号不合法"):
         validate_review_slug("weekly", "2026-08-23")
+
+
+def test_trading_option_update_accepts_edit_payload() -> None:
+    """验证 TradingOptionUpdate 能正确解析前端传入的 camelCase 编辑数据"""
+    value = TradingOptionUpdate.model_validate(
+        {
+            "active": False,
+            "kind": "symbol",
+            "label": "沪深300",
+            "sortOrder": 50,
+        }
+    )
+
+    assert value.active is False
+    assert value.kind == "symbol"
+    assert value.label == "沪深300"
+    assert value.sort_order == 50
