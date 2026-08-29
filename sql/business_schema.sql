@@ -63,6 +63,22 @@ CREATE INDEX trades_status_idx ON trades (status);
 CREATE INDEX trades_date_entry_idx ON trades (trade_date DESC, entry_at DESC);
 CREATE UNIQUE INDEX trades_source_row_uidx ON trades (source_file_hash, source_row);
 
+CREATE TABLE trade_executions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    trade_id uuid NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+    action varchar(8) NOT NULL,
+    executed_at timestamptz NOT NULL,
+    price numeric(30, 10) NOT NULL,
+    quantity numeric(30, 10) NOT NULL,
+    fee numeric(30, 10) NOT NULL DEFAULT 0,
+    reason text NOT NULL,
+    note text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX trade_executions_trade_time_idx ON trade_executions (trade_id, executed_at);
+
 CREATE TABLE daily_reviews (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     review_date date NOT NULL,

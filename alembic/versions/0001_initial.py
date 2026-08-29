@@ -38,6 +38,7 @@ def downgrade() -> None:
         "trading_options",
         "daily_reviews",
         "trades",
+        "trade_executions",
         "research_reviews",
     ):
         op.execute(f'DROP TABLE "{table}" CASCADE')
