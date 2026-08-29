@@ -35,6 +35,7 @@ from app.storage import get_minio, is_minio_error
 from app.trading_service import (
     attachment_view,
     create_trade,
+    delete_option,
     dashboard,
     delete_trade,
     get_daily_review,
@@ -150,6 +151,13 @@ async def options_patch(
     payload: TradingOptionsUpdate, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> TradingOptionsView:
     return await update_options(db, payload)
+
+
+@router.delete("/options/{option_id}", response_model=TradingOptionsView, dependencies=[Depends(require_origin)])
+async def option_delete(
+    option_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
+) -> TradingOptionsView:
+    return await delete_option(db, option_id)
 
 
 @router.get("/export.xlsx")

@@ -540,3 +540,12 @@ async def update_options(db: AsyncSession, payload: TradingOptionsUpdate) -> Tra
         await db.execute(statement)
     await db.commit()
     return await get_options(db)
+
+
+async def delete_option(db: AsyncSession, option_id: uuid.UUID) -> TradingOptionsView:
+    result = await db.execute(delete(TradingOption).where(TradingOption.id == option_id))
+    if result.rowcount == 0:
+        await db.rollback()
+        raise ApiError(404, "未找到录入字段")
+    await db.commit()
+    return await get_options(db)
