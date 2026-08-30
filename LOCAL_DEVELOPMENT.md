@@ -29,10 +29,10 @@ cp .env.example .env
 TRADING_DATABASE_URL=postgresql+psycopg://trading:你的数据库密码@127.0.0.1:5432/trading
 
 # 使用 stock-exchange-reviews 前端联调时使用这个 Origin。
-TRADING_FRONTEND_ORIGIN=http://localhost:3000
+TRADING_FRONTEND_ORIGINS=http://localhost:3000
 
 # 如果只通过 Swagger 测试写接口，可以改成：
-# TRADING_FRONTEND_ORIGIN=http://localhost:8000
+# TRADING_FRONTEND_ORIGINS=http://localhost:8000
 
 TRADING_PUBLIC_BASE_URL=http://localhost:8000
 TRADING_SESSION_SECURE=false
@@ -48,7 +48,7 @@ TRADING_ADMIN_USERNAME=admin
 TRADING_ADMIN_PASSWORD_HASH=
 ```
 
-`TRADING_FRONTEND_ORIGIN` 必须与发起写请求的浏览器 Origin 完全一致，否则登录和其他写接口会返回 `403`。
+`TRADING_FRONTEND_ORIGINS` 使用逗号分隔的显式来源白名单，必须包含发起写请求的浏览器 Origin，否则登录和其他写接口会返回 `403`。例如：`https://app.example.com,http://localhost:3000`。
 
 ## 3. 准备 PostgreSQL
 
@@ -161,7 +161,7 @@ uv run uvicorn app.main:app \
 
 ## 9. 登录接口检查
 
-如果 `.env` 中配置的是 `TRADING_FRONTEND_ORIGIN=http://localhost:3000`，可以使用以下命令检查登录：
+如果 `.env` 中配置的是 `TRADING_FRONTEND_ORIGINS=http://localhost:3000`，可以使用以下命令检查登录：
 
 ```bash
 curl -i \
@@ -188,7 +188,7 @@ API 已启动，但 PostgreSQL 或 MinIO 尚未就绪。检查数据库连接、
 
 ### 登录或写接口返回 403
 
-请求的 `Origin` 与 `TRADING_FRONTEND_ORIGIN` 不一致。修改 `.env` 后需要重新启动 FastAPI。
+请求的 `Origin` 不在 `TRADING_FRONTEND_ORIGINS` 白名单中。修改 `.env` 后需要重新启动 FastAPI。
 
 ### 浏览器登录成功但不保存 Cookie
 

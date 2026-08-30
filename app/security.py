@@ -66,7 +66,7 @@ async def current_session(
 
 def require_origin(request: Request, settings: Annotated[Settings, Depends(get_settings)]) -> None:
     origin = request.headers.get("origin")
-    if origin != settings.frontend_origin:
+    if origin not in settings.frontend_origin_list:
         raise ApiError(403, "请求来源不合法")
 
 

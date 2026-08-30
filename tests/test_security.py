@@ -8,7 +8,7 @@ from fastapi import Request
 from app.config import Settings
 from app.errors import ApiError
 from app.models import AuthSession
-from app.security import current_session, hash_session_token, new_session_token
+from app.security import current_session, hash_session_token, new_session_token, require_origin
 
 
 def request_with_session_cookie(token: str) -> Request:
@@ -16,6 +16,15 @@ def request_with_session_cookie(token: str) -> Request:
         {
             "type": "http",
             "headers": [(b"cookie", f"trading_session={token}".encode())],
+        }
+    )
+
+
+def request_with_origin(origin: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "headers": [(b"origin", origin.encode())],
         }
     )
 
@@ -41,6 +50,30 @@ def test_session_tokens_are_random_and_only_hash_is_persisted() -> None:
 def test_empty_session_cookie_domain_is_disabled() -> None:
     assert Settings(session_cookie_domain="").session_cookie_domain is None
     assert Settings(session_cookie_domain="example.com").session_cookie_domain == "example.com"
+
+
+def test_frontend_origins_parse_a_trimmed_deduplicated_allowlist() -> None:
+    settings = Settings(
+        frontend_origins=" https://app.example.com/ , http://localhost:3000, https://app.example.com "
+    )
+
+    assert settings.frontend_origin_list == [
+        "https://app.example.com",
+        "http://localhost:3000",
+    ]
+
+
+def test_require_origin_accepts_any_configured_frontend_origin() -> None:
+    settings = Settings(frontend_origins="https://app.example.com,http://localhost:3000")
+
+    require_origin(request_with_origin("http://localhost:3000"), settings)
+
+
+def test_require_origin_rejects_an_unconfigured_origin() -> None:
+    settings = Settings(frontend_origins="https://app.example.com,http://localhost:3000")
+
+    with pytest.raises(ApiError, match="请求来源不合法"):
+        require_origin(request_with_origin("https://not-allowed.example"), settings)
 
 
 async def test_recent_session_does_not_write_last_seen_at() -> None:
