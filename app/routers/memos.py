@@ -43,8 +43,9 @@ async def memos_index(
     date_to: Annotated[date | None, Query(alias="to")] = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, alias="pageSize", ge=1, le=50),
+    pinned: bool | None = None,
 ) -> dict[str, object]:
-    return await list_memos(db, _owner(session), q, page, page_size, date_from, date_to)
+    return await list_memos(db, _owner(session), q, page, page_size, date_from, date_to, pinned)
 
 
 @router.get("/attachments/{attachment_id}")

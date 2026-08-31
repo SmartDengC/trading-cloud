@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.dialects.postgresql import dialect
 
-from app.memo_service import build_memo_view, validate_memo_files
+from app.memo_service import build_memo_view, list_memos, validate_memo_files
 
 
 def test_validate_memo_files_rejects_empty_memo() -> None:
@@ -66,3 +68,30 @@ def test_build_memo_view_serializes_pinned_memo() -> None:
     result = build_memo_view(memo, [])
 
     assert result["pinned"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_memos_filters_for_pinned_records() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = 1
+    db.scalars.return_value = SimpleNamespace(
+        all=lambda: [
+            SimpleNamespace(
+                id="memo-1",
+                text="hello",
+                version=1,
+                pinned_at=SimpleNamespace(isoformat=lambda: "2026-08-27T00:00:00+00:00"),
+                created_at=SimpleNamespace(isoformat=lambda: "2026-08-27T00:00:00+00:00"),
+                updated_at=SimpleNamespace(isoformat=lambda: "2026-08-27T00:00:00+00:00"),
+                attachments=[],
+            )
+        ]
+    )
+
+    result = await list_memos(db, "admin", None, 1, 50, pinned=True)
+    statement = db.scalars.await_args.args[0]
+    sql = str(statement.compile(dialect=dialect()))
+
+    assert result["total"] == 1
+    assert result["items"][0]["pinned"] is True
+    assert "memos.pinned_at IS NOT NULL" in sql

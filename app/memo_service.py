@@ -63,8 +63,13 @@ async def list_memos(
     page_size: int,
     date_from: date | None = None,
     date_to: date | None = None,
+    pinned: bool | None = None,
 ) -> dict[str, Any]:
     conditions = [Memo.owner_username == owner_username, Memo.deleted_at.is_(None)]
+    if pinned is True:
+        conditions.append(Memo.pinned_at.is_not(None))
+    elif pinned is False:
+        conditions.append(Memo.pinned_at.is_(None))
     if date_from is not None:
         start = datetime.combine(date_from, time.min, SHANGHAI_TZ).astimezone(UTC)
         conditions.append(Memo.created_at >= start)
