@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     session_cookie: str = "trading_session"
     session_cookie_domain: str | None = None
     session_secure: bool = True
-    session_days: int = Field(default=7, ge=1, le=90)
+    session_hours: int = Field(default=2, ge=1, le=720)
 
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "trading-minio"

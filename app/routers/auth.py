@@ -39,11 +39,11 @@ async def login(
         raise ApiError(503, "管理员密码尚未配置")
     if not valid:
         raise ApiError(401, "账号或密码错误")
-    _, token = await create_session(db, payload.username, settings.session_days)
+    _, token = await create_session(db, payload.username, settings.session_hours)
     response.set_cookie(
         settings.session_cookie,
         token,
-        max_age=settings.session_days * 24 * 60 * 60,
+        max_age=settings.session_hours * 60 * 60,
         httponly=True,
         secure=settings.session_secure,
         samesite="lax",

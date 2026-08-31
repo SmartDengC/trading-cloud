@@ -40,6 +40,7 @@ chmod 600 .env
 - 使用外部服务时，将 `TRADING_DATABASE_URL`、`TRADING_MINIO_ENDPOINT`、访问凭据和桶名改为外部配置；MinIO 桶须提前创建。
 - 生产环境填写真实域名：`TRADING_API_DOMAIN` 只写主机名，另外两个 URL 使用 HTTPS，并保持 `TRADING_SESSION_SECURE=true`。
 - 前端与 API 使用同一主域的不同子域时，将 `TRADING_SESSION_COOKIE_DOMAIN` 设为共享主域；本地开发留空。
+- 登录会话默认有效期为 2 小时，可通过 `TRADING_SESSION_HOURS` 配置，范围为 1–720 小时。
 
 使用强密码替换模板值后，静默校验配置：
 
@@ -79,6 +80,8 @@ docker compose logs -f migrate api caddy
 ```
 
 后续发布只需重新执行 `docker compose build api && docker compose up -d`；依赖锁文件未变化时会复用 Docker 层缓存。
+
+会话有效期调整后，首次部署需使用生产 PostgreSQL 执行一次 `DELETE FROM auth_sessions;`，使旧的 7 天会话立即失效。之后新建会话统一按 `TRADING_SESSION_HOURS` 计算。
 
 临时通过服务器 IP 使用 HTTP 时，先将 `.env` 调整为：
 

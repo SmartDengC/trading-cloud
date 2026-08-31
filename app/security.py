@@ -70,14 +70,14 @@ def require_origin(request: Request, settings: Annotated[Settings, Depends(get_s
         raise ApiError(403, "请求来源不合法")
 
 
-async def create_session(db: AsyncSession, username: str, days: int) -> tuple[AuthSession, str]:
+async def create_session(db: AsyncSession, username: str, hours: int) -> tuple[AuthSession, str]:
     now = datetime.now(UTC)
     await db.execute(delete(AuthSession).where(AuthSession.expires_at <= now))
     token = new_session_token()
     session = AuthSession(
         token_hash=hash_session_token(token),
         username=username,
-        expires_at=now + timedelta(days=days),
+        expires_at=now + timedelta(hours=hours),
         last_seen_at=now,
     )
     db.add(session)

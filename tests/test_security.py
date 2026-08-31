@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import Request
@@ -8,7 +8,13 @@ from fastapi import Request
 from app.config import Settings
 from app.errors import ApiError
 from app.models import AuthSession
-from app.security import current_session, hash_session_token, new_session_token, require_origin
+from app.security import (
+    create_session,
+    current_session,
+    hash_session_token,
+    new_session_token,
+    require_origin,
+)
 
 
 def request_with_session_cookie(token: str) -> Request:
@@ -29,12 +35,12 @@ def request_with_origin(origin: str) -> Request:
     )
 
 
-def auth_session(*, last_seen_at: datetime) -> AuthSession:
+def auth_session(*, expires_at: datetime | None = None, last_seen_at: datetime) -> AuthSession:
     return AuthSession(
         id=uuid.uuid4(),
         token_hash=hash_session_token("token"),
         username="admin",
-        expires_at=datetime.now(UTC) + timedelta(days=1),
+        expires_at=expires_at or datetime.now(UTC) + timedelta(days=1),
         last_seen_at=last_seen_at,
     )
 
@@ -50,6 +56,21 @@ def test_session_tokens_are_random_and_only_hash_is_persisted() -> None:
 def test_empty_session_cookie_domain_is_disabled() -> None:
     assert Settings(session_cookie_domain="").session_cookie_domain is None
     assert Settings(session_cookie_domain="example.com").session_cookie_domain == "example.com"
+
+
+def test_session_defaults_to_two_hours() -> None:
+    assert Settings().session_hours == 2
+
+
+async def test_new_session_expires_two_hours_from_creation() -> None:
+    db = AsyncMock()
+    db.add = Mock()
+    before = datetime.now(UTC)
+
+    session, _ = await create_session(db, "admin", 2)
+
+    after = datetime.now(UTC)
+    assert before + timedelta(hours=2) <= session.expires_at <= after + timedelta(hours=2)
 
 
 def test_frontend_origins_parse_a_trimmed_deduplicated_allowlist() -> None:
@@ -118,5 +139,19 @@ async def test_invalid_or_expired_session_is_rejected() -> None:
 
     with pytest.raises(ApiError, match="登录已失效"):
         await current_session(request_with_session_cookie("expired-token"), db, Settings())
+
+    db.commit.assert_not_awaited()
+
+
+async def test_session_expired_after_two_hours_is_rejected() -> None:
+    db = AsyncMock()
+    db.scalar.return_value = None
+
+    with pytest.raises(ApiError, match="登录已失效"):
+        await current_session(
+            request_with_session_cookie("expired-token"),
+            db,
+            Settings(session_hours=2),
+        )
 
     db.commit.assert_not_awaited()
