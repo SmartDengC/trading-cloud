@@ -52,7 +52,10 @@ class ResearchReview(TimestampMixin, Base):
 
 class Memo(TimestampMixin, Base):
     __tablename__ = "memos"
-    __table_args__ = (Index("memos_owner_created_idx", "owner_username", "created_at"),)
+    __table_args__ = (
+        Index("memos_owner_created_idx", "owner_username", "created_at"),
+        Index("memos_owner_pinned_idx", "owner_username", "pinned_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
@@ -61,6 +64,7 @@ class Memo(TimestampMixin, Base):
     text: Mapped[str] = mapped_column(Text)
     source_type: Mapped[str] = mapped_column(String(16), default="text", server_default="text")
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attachments: Mapped[list[MemoAttachment]] = relationship(
         back_populates="memo", cascade="all, delete-orphan"

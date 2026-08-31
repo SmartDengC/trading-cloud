@@ -35,6 +35,7 @@ def validate_memo_files(text: str, files: Sequence[Any], existing_count: int = 0
 def build_memo_view(memo: Memo, attachments: Sequence[MemoAttachment]) -> dict[str, Any]:
     return {
         "id": str(memo.id),
+        "pinned": memo.pinned_at is not None,
         "text": memo.text,
         "source_type": "text",
         "version": memo.version,
@@ -84,7 +85,7 @@ async def list_memos(
                 select(Memo)
                 .options(selectinload(Memo.attachments))
                 .where(*conditions)
-                .order_by(Memo.created_at.desc())
+                .order_by(Memo.pinned_at.desc().nulls_last(), Memo.created_at.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             )

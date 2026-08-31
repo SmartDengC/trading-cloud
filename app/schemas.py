@@ -97,6 +97,7 @@ class MemoAttachmentView(ApiModel):
 
 class MemoView(ApiModel):
     id: str
+    pinned: bool
     text: str
     source_type: Literal["text"]
     version: int
@@ -114,6 +115,7 @@ class MemoListView(ApiModel):
 
 
 class MemoUpdate(ApiModel):
+    pinned: bool | None = None
     text: str = Field(default="", max_length=100_000)
     version: int = Field(ge=1)
 

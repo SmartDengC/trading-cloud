@@ -4,12 +4,14 @@ CREATE TABLE memos (
     text text NOT NULL DEFAULT '',
     source_type varchar(16) NOT NULL DEFAULT 'text',
     version integer NOT NULL DEFAULT 1,
+    pinned_at timestamptz,
     deleted_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX memos_owner_created_idx ON memos (owner_username, created_at DESC);
+CREATE INDEX memos_owner_pinned_idx ON memos (owner_username, pinned_at DESC);
 
 CREATE TABLE memo_attachments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

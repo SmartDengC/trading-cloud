@@ -32,6 +32,7 @@ def test_build_memo_view_serializes_attachment_access_url() -> None:
     memo = SimpleNamespace(
         id="memo-1",
         owner_username="admin",
+        pinned_at=None,
         text="hello",
         version=1,
         created_at=SimpleNamespace(isoformat=lambda: "2026-08-27T00:00:00+00:00"),
@@ -48,4 +49,20 @@ def test_build_memo_view_serializes_attachment_access_url() -> None:
     result = build_memo_view(memo, [attachment])
 
     assert result["id"] == "memo-1"
+    assert result["pinned"] is False
     assert result["attachments"][0]["access_url"] == "/api/memos/attachments/file-1"
+
+
+def test_build_memo_view_serializes_pinned_memo() -> None:
+    memo = SimpleNamespace(
+        id="memo-1",
+        text="hello",
+        version=2,
+        pinned_at=SimpleNamespace(isoformat=lambda: "2026-08-27T00:00:00+00:00"),
+        created_at=SimpleNamespace(isoformat=lambda: "2026-08-27T00:00:00+00:00"),
+        updated_at=SimpleNamespace(isoformat=lambda: "2026-08-27T00:00:00+00:00"),
+    )
+
+    result = build_memo_view(memo, [])
+
+    assert result["pinned"] is True

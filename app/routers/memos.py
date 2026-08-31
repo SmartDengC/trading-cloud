@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from io import BytesIO
 from typing import Annotated
 from urllib.parse import quote
@@ -185,6 +185,8 @@ async def memo_update(
     if not payload.text.strip() and not row.attachments:
         raise ApiError(400, "正文或附件至少填写一项")
     row.text = payload.text
+    if payload.pinned is not None:
+        row.pinned_at = datetime.now(UTC) if payload.pinned else None
     row.version += 1
     await db.commit()
     updated = await db.scalar(
