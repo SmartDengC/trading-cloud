@@ -16,7 +16,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from app.config import get_settings
 from app.database import get_db
 from app.errors import install_error_handlers
-from app.routers import auth, memos, reviews, rules, trading
+from app.routers import auth, market, memos, reviews, rules, trading
 from app.storage import get_minio
 
 settings = get_settings()
@@ -32,6 +32,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Accept", "X-Requested-With"],
 )
 app.include_router(auth.router)
+app.include_router(market.router)
 app.include_router(memos.router)
 app.include_router(reviews.router)
 app.include_router(rules.router)

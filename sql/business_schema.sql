@@ -170,4 +170,20 @@ CREATE TABLE auth_sessions (
 CREATE UNIQUE INDEX auth_sessions_token_hash_uidx ON auth_sessions (token_hash);
 CREATE INDEX auth_sessions_expires_at_idx ON auth_sessions (expires_at);
 
+CREATE TABLE market_quote_configs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    display_name varchar(80) NOT NULL,
+    market varchar(32) NOT NULL,
+    sina_symbol varchar(80) NOT NULL,
+    unit varchar(32) NOT NULL,
+    sort_order integer NOT NULL DEFAULT 0,
+    enabled boolean NOT NULL DEFAULT true,
+    version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX market_quote_configs_sina_symbol_uidx ON market_quote_configs (sina_symbol);
+CREATE INDEX market_quote_configs_enabled_sort_idx ON market_quote_configs (enabled, sort_order);
+
 COMMIT;

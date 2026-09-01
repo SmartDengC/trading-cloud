@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_business_ddl_contains_every_migrated_table() -> None:
     ddl = (ROOT / "sql/business_schema.sql").read_text(encoding="utf-8")
-    for table in (*BUSINESS_TABLE_NAMES, "auth_sessions"):
+    for table in (*BUSINESS_TABLE_NAMES, "auth_sessions", "market_quote_configs"):
         assert f"CREATE TABLE {table} (" in ddl
     assert "blob_url" not in ddl
     assert "object_key text NOT NULL" in ddl

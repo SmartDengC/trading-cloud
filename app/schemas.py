@@ -52,6 +52,55 @@ class SessionView(ApiModel):
     user: UserView | None = None
 
 
+class MarketQuoteConfigInput(ApiModel):
+    display_name: str = Field(min_length=1, max_length=80)
+    market: str = Field(min_length=1, max_length=32)
+    sina_symbol: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")
+    unit: str = Field(min_length=1, max_length=32)
+    sort_order: int = Field(default=0, ge=0, le=1_000_000)
+    enabled: bool = True
+    version: int | None = Field(default=None, ge=1)
+
+    @field_validator("display_name", "market", "sina_symbol", "unit")
+    @classmethod
+    def strip_quote_config_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("行情配置不能为空")
+        return value
+
+
+class MarketQuoteConfigView(ApiModel):
+    id: str
+    display_name: str
+    market: str
+    sina_symbol: str
+    unit: str
+    sort_order: int
+    enabled: bool
+    version: int
+
+
+class MarketQuoteItem(ApiModel):
+    config_id: str
+    display_name: str
+    market: str
+    sina_symbol: str
+    unit: str
+    value: str | None = None
+    change: str | None = None
+    change_percent: str | None = None
+    quote_time: datetime | None = None
+    status: Literal["ok", "error"]
+    message: str | None = None
+
+
+class MarketQuotesView(ApiModel):
+    items: list[MarketQuoteItem]
+    fetched_at: datetime
+    source: str
+
+
 class ResearchReviewInput(ApiModel):
     title: str = Field(min_length=1, max_length=200)
     date_label: str = Field(min_length=1, max_length=80)

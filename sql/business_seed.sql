@@ -32,5 +32,12 @@ INSERT INTO trading_settings (key, value)
 VALUES ('default_usdt_cny_rate', '7.2')
 ON CONFLICT (key) DO NOTHING;
 
-COMMIT;
+INSERT INTO market_quote_configs (display_name, market, sina_symbol, unit, sort_order)
+VALUES
+    ('上证指数', 'A股', 'sh000001', '点', 10),
+    ('恒生指数', '港股', 'hkHSI', '点', 20),
+    ('现货黄金', '贵金属', 'hf_XAU', '美元/盎司', 30),
+    ('布伦特原油', '大宗商品', 'hf_BZ', '美元/桶', 40)
+ON CONFLICT (sina_symbol) DO NOTHING;
 
+COMMIT;
