@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from app.errors import validation_error_message
 from app.schemas import TradeExecutionInput, TradeInput, TradingOptionUpdate, validate_review_slug
 
 
@@ -101,3 +102,9 @@ def test_trade_execution_input_normalizes_decimal_and_timezone() -> None:
     assert value.price == "100.50"
     assert value.quantity == "2"
     assert value.executed_at.hour == 1
+
+
+def test_validation_error_message_names_forbidden_input_field() -> None:
+    assert validation_error_message(
+        [{"loc": ("body", "id"), "msg": "Extra inputs are not permitted", "type": "extra_forbidden"}]
+    ) == "不允许提交字段：id"
