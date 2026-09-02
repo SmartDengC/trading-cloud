@@ -121,6 +121,24 @@ API 镜像以非 root 用户 `10001:10001` 运行。生产环境不会启动内�
 
 Alembic 是生产 schema 升级入口；SQL 文件用于审阅、空库初始化和结构等价验证。
 
+## 新浪行情代码配置
+
+行情配置中的 symbol 是新浪行情接口使用的代码，不是本项目自定义的名称。新增或修改行情前，可以直接请求接口验证代码是否有效：
+
+```text
+https://hq.sinajs.cn/list=hkHSTECH,hf_XAU,hf_OIL
+```
+
+返回内容中的变量名就是对应的有效代码，例如 `hq_str_hkHSTECH`、`hq_str_hf_XAU` 和 `hq_str_hf_OIL`。如果某个变量返回空字符串，通常表示代码无效、已停用或当前接口不提供该品种。
+
+常见代码前缀如下：
+
+- `hk`：港股或港股指数，例如 `hkHSTECH`、`hkHSI`
+- `hf_`：国际期货或现货，例如 `hf_XAU`、`hf_OIL`
+- `sh` / `sz`：沪深 A 股或指数，例如 `sh000001`、`sz399001`
+
+新浪没有稳定公开、完整的代码列表页，实际使用时应以接口返回结果为准。
+
 ## 源数据迁移
 
 先启动目标 PostgreSQL/MinIO 并执行 Alembic，然后配置 `LEGACY_DATABASE_URL`、`BLOB_READ_WRITE_TOKEN` 和目标 `TRADING_DATABASE_URL`。

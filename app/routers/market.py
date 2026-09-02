@@ -22,6 +22,11 @@ from app.schemas import (
 from app.security import current_session, require_origin
 
 router = APIRouter(prefix="/api/market", tags=["market"], dependencies=[Depends(current_session)])
+quote_client = SinaQuoteClient()
+
+
+async def close_quote_client() -> None:
+    await quote_client.close()
 
 
 def config_view(row: MarketQuoteConfig) -> MarketQuoteConfigView:
@@ -119,7 +124,7 @@ async def get_quotes(db: Annotated[AsyncSession, Depends(get_db)]) -> MarketQuot
         return MarketQuotesView(items=[], fetched_at=fetched_at, source="新浪财经")
     symbols = [row.sina_symbol for row in rows]
     try:
-        quotes = await SinaQuoteClient().fetch(symbols)
+        quotes = await quote_client.fetch(symbols)
     except SinaQuoteError as error:
         message = str(error)
         return MarketQuotesView(

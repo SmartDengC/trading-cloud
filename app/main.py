@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from time import perf_counter
 from typing import Annotated
 
@@ -22,7 +24,15 @@ from app.storage import get_minio
 settings = get_settings()
 request_logger = logging.getLogger("trading.request")
 request_id_pattern = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
-app = FastAPI(title="Trading Cloud", version="0.1.0")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    await market.close_quote_client()
+
+
+app = FastAPI(title="Trading Cloud", version="0.1.0", lifespan=lifespan)
 install_error_handlers(app)
 app.add_middleware(
     CORSMiddleware,
@@ -47,16 +57,18 @@ async def record_request_timing(request: Request, call_next: RequestResponseEndp
         if request_id_pattern.fullmatch(supplied_request_id)
         else str(uuid.uuid4())
     )
+    request_attempt = request.headers.get("X-Request-Attempt", "1")
     started = perf_counter()
     try:
         response = await call_next(request)
     except Exception:
         duration_ms = (perf_counter() - started) * 1000
         request_logger.exception(
-            "request_failed method=%s path=%s status=500 request_id=%s duration_ms=%.2f",
+            "request_failed method=%s path=%s status=500 request_id=%s attempt=%s duration_ms=%.2f",
             request.method,
             request.url.path,
             request_id,
+            request_attempt,
             duration_ms,
         )
         raise
@@ -69,11 +81,12 @@ async def record_request_timing(request: Request, call_next: RequestResponseEndp
     )
     response.headers["X-Request-ID"] = request_id
     request_logger.info(
-        "request method=%s path=%s status=%s request_id=%s duration_ms=%.2f",
+        "request method=%s path=%s status=%s request_id=%s attempt=%s duration_ms=%.2f",
         request.method,
         request.url.path,
         response.status_code,
         request_id,
+        request_attempt,
         duration_ms,
     )
     return response
