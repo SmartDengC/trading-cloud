@@ -51,6 +51,9 @@ def _quote_time(
 ) -> datetime:
     if date_index is None:
         for index, value in enumerate(fields):
+            if re.fullmatch(r"\d{4}[-/]\d{2}[-/]\d{2} \d{2}:\d{2}(?::\d{2})?", value.strip()):
+                date_value, time_value = value.strip().split(maxsplit=1)
+                return _parse_datetime(date_value, time_value)
             if re.fullmatch(r"\d{4}[-/]\d{2}[-/]\d{2}", value.strip()):
                 date_index = index
                 break
@@ -64,6 +67,10 @@ def _quote_time(
     time_value = fields[time_index].strip()
     if re.fullmatch(r"\d{2}:\d{2}", time_value):
         time_value += ":00"
+    return _parse_datetime(date_value, time_value)
+
+
+def _parse_datetime(date_value: str, time_value: str) -> datetime:
     try:
         return datetime.strptime(
             f"{date_value} {time_value}", "%Y-%m-%d %H:%M:%S"
@@ -81,7 +88,14 @@ def parse_sina_quotes(raw: str, symbols: list[str]) -> dict[str, SinaQuote]:
         fields = [item.strip() for item in payload.split(",")]
         if not payload or len(fields) < 4 or not fields[0]:
             raise SinaQuoteError("行情数据不完整")
-        if symbol.lower().startswith("hf_"):
+        if symbol.lower().startswith("gb_"):
+            current = _decimal(fields[1])
+            change = _decimal(fields[4]) if len(fields) > 4 else None
+            change_percent = _decimal(fields[2]) if len(fields) > 2 else None
+            name = fields[0]
+            quote_time = _quote_time(fields)
+            previous = None
+        elif symbol.lower().startswith("hf_"):
             current = _decimal(fields[0])
             previous = _decimal(fields[7]) if len(fields) > 7 else None
             name = fields[13] if len(fields) > 13 and fields[13] else symbol
@@ -98,12 +112,13 @@ def parse_sina_quotes(raw: str, symbols: list[str]) -> dict[str, SinaQuote]:
             quote_time = _quote_time(fields)
         if current is None:
             raise SinaQuoteError("行情数据不完整")
-        if previous is None:
-            change = None
-            change_percent = None
-        else:
-            change = current - previous
-            change_percent = change / previous * 100 if previous != 0 else None
+        if not symbol.lower().startswith("gb_"):
+            if previous is None:
+                change = None
+                change_percent = None
+            else:
+                change = current - previous
+                change_percent = change / previous * 100 if previous != 0 else None
         result[symbol] = SinaQuote(
             name=name,
             value=_format_decimal(current),

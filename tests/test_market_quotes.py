@@ -70,6 +70,23 @@ def test_parse_sina_quotes_normalizes_brent_quote() -> None:
     assert result["hf_OIL"].quote_time.strftime("%Y-%m-%d %H:%M:%S") == "2026-09-02 12:26:38"
 
 
+def test_parse_sina_quotes_normalizes_us_index() -> None:
+    raw = (
+        'var hq_str_gb_ixic="纳斯达克,26099.7742,-1.03,2026-09-02 05:30:00,-271.1149,'
+        '26031.6697,26260.6818,25995.5300,27190.2070,20690.2500,5809876309,6271106057,'
+        '0,0.00,--,0.00,0.00,0.00,0.00,0,0,0.0000,0.00,0.00,,Sep 01 05:16PM EDT,'
+        '26370.8891,0,1,2026,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000";'
+    )
+
+    result = parse_sina_quotes(raw, ["gb_ixic"])
+
+    assert result["gb_ixic"].name == "纳斯达克"
+    assert result["gb_ixic"].value == "26099.77"
+    assert result["gb_ixic"].change == "-271.11"
+    assert result["gb_ixic"].change_percent == "-1.03%"
+    assert result["gb_ixic"].quote_time.strftime("%Y-%m-%d %H:%M:%S") == "2026-09-02 05:30:00"
+
+
 @pytest.mark.asyncio
 async def test_sina_client_translates_upstream_failure() -> None:
     async def handler(_: httpx.Request) -> httpx.Response:

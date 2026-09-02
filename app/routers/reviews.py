@@ -53,7 +53,7 @@ async def list_reviews(
     rows = list(
         (
             await db.scalars(
-                select(ResearchReview).where(*conditions).order_by(ResearchReview.date_label.desc())
+                select(ResearchReview).where(*conditions).order_by(ResearchReview.slug.desc())
             )
         ).all()
     )

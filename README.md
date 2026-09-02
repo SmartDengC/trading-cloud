@@ -136,6 +136,7 @@ https://hq.sinajs.cn/list=hkHSTECH,hf_XAU,hf_OIL
 - `hk`：港股或港股指数，例如 `hkHSTECH`、`hkHSI`
 - `hf_`：国际期货或现货，例如 `hf_XAU`、`hf_OIL`
 - `sh` / `sz`：沪深 A 股或指数，例如 `sh000001`、`sz399001`
+- `gb_`：表示美股/美国市场行情，例如 `gb_ixic`
 
 新浪没有稳定公开、完整的代码列表页，实际使用时应以接口返回结果为准。
 
