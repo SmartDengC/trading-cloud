@@ -4,7 +4,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import HealthcheckAccessLogFilter, app
 
 
 def test_liveness_does_not_require_external_dependencies() -> None:
@@ -35,3 +35,40 @@ def test_request_log_does_not_include_query_or_cookie(caplog) -> None:
 
     assert response.status_code == 200
     assert "do-not-log" not in caplog.text
+
+
+def test_access_log_filter_suppresses_only_container_health_checks() -> None:
+    access_filter = HealthcheckAccessLogFilter()
+    message = '%s - "%s %s HTTP/%s" %s'
+
+    ready = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        0,
+        message,
+        ("127.0.0.1:34394", "GET", "/health/ready", "1.1", 200),
+        None,
+    )
+    live = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        0,
+        message,
+        ("127.0.0.1:34394", "GET", "/health/live?verbose=1", "1.1", 200),
+        None,
+    )
+    api = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        0,
+        message,
+        ("172.18.0.3:51920", "GET", "/api/trading/trades", "1.1", 200),
+        None,
+    )
+
+    assert access_filter.filter(ready) is False
+    assert access_filter.filter(live) is False
+    assert access_filter.filter(api) is True

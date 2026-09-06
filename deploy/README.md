@@ -4,14 +4,14 @@
 
 ```text
 se.vdcc.cn (Vercel)
-  /api/* -> https://hahadeng.cn/api/*
-                 |
-                 v
-       阿里云 Caddy + FastAPI
-          |               |
-          | 公网 HTTP     | 公网 PostgreSQL
-          v               v
- 腾讯云现有 MinIO :9000   腾讯云 PostgreSQL :5432
+  /api/* -> HKG Edge Function -> https://hahadeng.cn/api/*
+                                     |
+                                     v
+                           阿里云 Caddy + FastAPI
+                              |               |
+                              | 公网 HTTP     | 公网 PostgreSQL
+                              v               v
+                    腾讯云现有 MinIO :9000   腾讯云 PostgreSQL :5432
  腾讯云 MinIO 控制台 :9001
 ```
 
@@ -140,7 +140,7 @@ curl --fail https://hahadeng.cn/health/ready
 
 ## 5. Vercel
 
-前端保持同源配置：浏览器请求 `https://se.vdcc.cn/api/*`，Vercel Rewrite 转发到 `https://hahadeng.cn/api/*`。不需要因腾讯侧改走公网而修改前端。
+前端保持同源配置：浏览器请求 `https://se.vdcc.cn/api/*`，项目内的 HKG Edge Function 再转发到 `https://hahadeng.cn/api/*`。不需要因腾讯侧改走公网而修改前端。
 
 如果 Vercel Project Settings 中存在 `VITE_GLOB_API_URL`，应删除该变量或将 Production 值设为空字符串。
 

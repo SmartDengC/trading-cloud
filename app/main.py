@@ -24,6 +24,25 @@ from app.storage import get_minio
 settings = get_settings()
 request_logger = logging.getLogger("trading.request")
 request_id_pattern = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
+healthcheck_paths = frozenset({"/health/live", "/health/ready"})
+
+
+class HealthcheckAccessLogFilter(logging.Filter):
+    """Keep Docker's frequent loopback probes out of Uvicorn access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if not isinstance(args, tuple) or len(args) < 3:
+            return True
+        path = args[2]
+        if not isinstance(path, str):
+            return True
+        return path.split("?", maxsplit=1)[0] not in healthcheck_paths
+
+
+access_logger = logging.getLogger("uvicorn.access")
+if not any(isinstance(log_filter, HealthcheckAccessLogFilter) for log_filter in access_logger.filters):
+    access_logger.addFilter(HealthcheckAccessLogFilter())
 
 
 @asynccontextmanager
