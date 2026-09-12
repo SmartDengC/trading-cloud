@@ -141,6 +141,18 @@ docker compose up -d --build      # 代码更新后重建并重启
 
 ## 完整部署顺序（前后端分服务器）
 
+后端允许的前端 origin 配置为：
+
+```dotenv
+TRADING_FRONTEND_ORIGINS=https://se.vdcc.cn,http://FRONTEND_PUBLIC_IP:8090,http://localhost:8080
+```
+
+注意 CORS origin 必须包含协议，`localhost:8080` 要写成 `http://localhost:8080`。修改后执行：
+
+```bash
+docker compose up -d --force-recreate api caddy
+```
+
 从零部署整个系统时，顺序是：
 
 1. **腾讯云**：部署 PostgreSQL（`deploy/tencent/`），确认 `:5432` 可连通。
