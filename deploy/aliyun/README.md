@@ -3,9 +3,9 @@
 本目录在阿里云上部署 **FastAPI API + Caddy 反向代理**。数据库（PostgreSQL）和对象存储（MinIO）都在腾讯云，本目录不部署它们。阿里云通过公网连接腾讯云的 PostgreSQL（`:5432`）和 MinIO（`:9000`）。
 
 ```text
-浏览器 -> Vercel(se.vdcc.cn) -> HKG Edge Function -> hahadeng.cn/api/* -> 阿里云 Caddy:443 -> FastAPI:8000
-                                                                                          |
-                                                                              公网连腾讯 PostgreSQL / MinIO
+浏览器 -> 前端服务器:8090 -> hahadeng.cn/api/* -> 阿里云 Caddy:443 -> FastAPI:8000
+                                                                    |
+                                                        公网连腾讯 PostgreSQL / MinIO
 ```
 
 ## 服务依赖
@@ -139,12 +139,14 @@ docker compose restart api
 docker compose up -d --build      # 代码更新后重建并重启
 ```
 
-## 完整部署顺序（双云协同）
+## 完整部署顺序（前后端分服务器）
 
 从零部署整个系统时，顺序是：
 
 1. **腾讯云**：部署 PostgreSQL（`deploy/tencent/`），确认 `:5432` 可连通。
 2. **阿里云**：部署 API（本目录），连接腾讯 PostgreSQL + MinIO。
-3. **Vercel**：前端 `se.vdcc.cn` 的 `/api/*` 由固定在 HKG 的 Edge Function 转发到 `https://hahadeng.cn/api/*`，浏览器仍使用 host-only 会话 Cookie。
+3. **前端服务器**：使用前端仓库 `deploy/tencent/compose.frontend.yaml` 构建 Vue 静态站点，由 Nginx 将 `/api/*` 转发到 `https://hahadeng.cn/api/*`。
+
+Vercel 配置仍可保留，作为切换失败时的回滚入口；切换到前端服务器后，生产流量不再经过 Vercel Edge Function。
 
 阿里云的 `migrate` 服务会在 `api` 启动前自动跑 `alembic upgrade head`，所以数据库 schema 迁移是自动的——前提是腾讯 PostgreSQL 已就绪且网络可达。
