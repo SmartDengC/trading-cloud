@@ -300,6 +300,53 @@ class MarketQuoteConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class QuantStrategy(TimestampMixin, Base):
+    __tablename__ = "quant_strategies"
+    __table_args__ = (
+        Index("quant_strategies_name_uidx", "name", unique=True),
+        Index("quant_strategies_file_name_uidx", "file_name", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    file_name: Mapped[str] = mapped_column(String(255))
+    source_code: Mapped[str] = mapped_column(Text)
+    timeframe: Mapped[str] = mapped_column(String(40))
+    is_example: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    summary: Mapped[str] = mapped_column(Text, default="", server_default="")
+    explanation: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    backtests: Mapped[list[QuantBacktest]] = relationship(
+        back_populates="strategy", cascade="all, delete-orphan", order_by="QuantBacktest.run_at.desc()"
+    )
+
+
+class QuantBacktest(TimestampMixin, Base):
+    __tablename__ = "quant_backtests"
+    __table_args__ = (Index("quant_backtests_strategy_run_idx", "strategy_id", "run_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    strategy_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quant_strategies.id", ondelete="CASCADE")
+    )
+    run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    timerange: Mapped[str] = mapped_column(String(120))
+    pairs: Mapped[str] = mapped_column(String(500))
+    timeframe: Mapped[str] = mapped_column(String(40))
+    trade_count: Mapped[int | None] = mapped_column(Integer)
+    total_return: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    win_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    max_drawdown: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    profit_factor: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    notes: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    strategy: Mapped[QuantStrategy] = relationship(back_populates="backtests")
+
+
 class TradingRule(TimestampMixin, Base):
     __tablename__ = "trading_rules"
     __table_args__ = (

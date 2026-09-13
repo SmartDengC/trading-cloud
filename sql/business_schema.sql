@@ -186,4 +186,41 @@ CREATE TABLE market_quote_configs (
 CREATE UNIQUE INDEX market_quote_configs_sina_symbol_uidx ON market_quote_configs (sina_symbol);
 CREATE INDEX market_quote_configs_enabled_sort_idx ON market_quote_configs (enabled, sort_order);
 
+CREATE TABLE quant_strategies (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name varchar(120) NOT NULL,
+    file_name varchar(255) NOT NULL,
+    source_code text NOT NULL,
+    timeframe varchar(40) NOT NULL,
+    is_example boolean NOT NULL DEFAULT false,
+    summary text NOT NULL DEFAULT '',
+    explanation text NOT NULL,
+    version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX quant_strategies_name_uidx ON quant_strategies (name);
+CREATE UNIQUE INDEX quant_strategies_file_name_uidx ON quant_strategies (file_name);
+
+CREATE TABLE quant_backtests (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    strategy_id uuid NOT NULL REFERENCES quant_strategies(id) ON DELETE CASCADE,
+    run_at timestamptz NOT NULL,
+    timerange varchar(120) NOT NULL,
+    pairs varchar(500) NOT NULL,
+    timeframe varchar(40) NOT NULL,
+    trade_count integer,
+    total_return numeric(20, 8),
+    win_rate numeric(10, 4),
+    max_drawdown numeric(20, 8),
+    profit_factor numeric(20, 8),
+    notes text,
+    version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX quant_backtests_strategy_run_idx ON quant_backtests (strategy_id, run_at);
+
 COMMIT;

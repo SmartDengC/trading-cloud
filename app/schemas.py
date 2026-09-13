@@ -37,6 +37,21 @@ def _decimal(
     return format(number, "f")
 
 
+def _signed_decimal(value: str | int | float | Decimal | None, label: str) -> str | None:
+    if value is None or value == "":
+        return None
+    text = str(value).strip()
+    if re.fullmatch(r"-?(?:\d+|\d*\.\d+)", text) is None:
+        raise ValueError(f"{label}不合法")
+    try:
+        number = Decimal(text)
+    except (InvalidOperation, ValueError) as error:
+        raise ValueError(f"{label}不合法") from error
+    if not number.is_finite():
+        raise ValueError(f"{label}不合法")
+    return format(number, "f")
+
+
 class LoginInput(ApiModel):
     username: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=1, max_length=500)
@@ -199,6 +214,124 @@ class TradingRuleView(ApiModel):
     version: int
     created_at: str
     updated_at: str
+
+
+class QuantStrategyInput(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+    file_name: str = Field(min_length=1, max_length=255, pattern=r"^[^/\\]+\.py$")
+    source_code: str = Field(min_length=1, max_length=2 * 1024 * 1024)
+    timeframe: str = Field(min_length=1, max_length=40)
+    is_example: bool = False
+    summary: str = Field(default="", max_length=20_000)
+    explanation: str = Field(min_length=1, max_length=2 * 1024 * 1024)
+    version: int | None = Field(default=None, ge=1)
+
+    @field_validator("name", "file_name", "timeframe", "explanation")
+    @classmethod
+    def strip_quant_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("量化策略内容不能为空")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def strip_quant_summary(cls, value: str) -> str:
+        return value.strip()
+
+
+class QuantBacktestInput(ApiModel):
+    run_at: datetime
+    timerange: str = Field(min_length=1, max_length=120)
+    pairs: str = Field(min_length=1, max_length=500)
+    timeframe: str = Field(min_length=1, max_length=40)
+    trade_count: int | None = Field(default=None, ge=0, le=2_000_000_000)
+    total_return: str | None = None
+    win_rate: str | None = None
+    max_drawdown: str | None = None
+    profit_factor: str | None = None
+    notes: str | None = Field(default=None, max_length=20_000)
+    version: int | None = Field(default=None, ge=1)
+
+    @field_validator("run_at")
+    @classmethod
+    def require_run_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("回测时间必须包含时区")
+        return value
+
+    @field_validator("timerange", "pairs", "timeframe")
+    @classmethod
+    def strip_backtest_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("回测字段不能为空")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def strip_backtest_notes(cls, value: str | None) -> str | None:
+        return value.strip() if value else None
+
+    @field_validator("total_return")
+    @classmethod
+    def validate_total_return(cls, value: str | None) -> str | None:
+        return _signed_decimal(value, "总收益率")
+
+    @field_validator("win_rate")
+    @classmethod
+    def validate_win_rate(cls, value: str | None) -> str | None:
+        normalized = _decimal(value, "胜率", optional=True, zero=True)
+        if normalized is not None and Decimal(normalized) > 100:
+            raise ValueError("胜率必须在 0 到 100 之间")
+        return normalized
+
+    @field_validator("max_drawdown")
+    @classmethod
+    def validate_max_drawdown(cls, value: str | None) -> str | None:
+        return _decimal(value, "最大回撤", optional=True, zero=True)
+
+    @field_validator("profit_factor")
+    @classmethod
+    def validate_profit_factor(cls, value: str | None) -> str | None:
+        return _decimal(value, "盈利因子", optional=True, zero=True)
+
+
+class QuantBacktestView(ApiModel):
+    id: str
+    strategy_id: str
+    run_at: datetime
+    timerange: str
+    pairs: str
+    timeframe: str
+    trade_count: int | None
+    total_return: str | None
+    win_rate: str | None
+    max_drawdown: str | None
+    profit_factor: str | None
+    notes: str | None
+    version: int
+    created_at: str
+    updated_at: str
+
+
+class QuantStrategyListView(ApiModel):
+    id: str
+    name: str
+    file_name: str
+    timeframe: str
+    is_example: bool
+    summary: str
+    latest_backtest: QuantBacktestView | None
+    version: int
+    created_at: str
+    updated_at: str
+
+
+class QuantStrategyView(QuantStrategyListView):
+    source_code: str
+    explanation: str
+    backtests: list[QuantBacktestView]
 
 
 class TradeInput(ApiModel):

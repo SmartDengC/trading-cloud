@@ -129,6 +129,42 @@ TABLES = (
             "created_at",
         ),
     ),
+    TableSpec(
+        "quant_strategies",
+        (
+            "id",
+            "name",
+            "file_name",
+            "source_code",
+            "timeframe",
+            "is_example",
+            "summary",
+            "explanation",
+            "version",
+            "created_at",
+            "updated_at",
+        ),
+    ),
+    TableSpec(
+        "quant_backtests",
+        (
+            "id",
+            "strategy_id",
+            "run_at",
+            "timerange",
+            "pairs",
+            "timeframe",
+            "trade_count",
+            "total_return",
+            "win_rate",
+            "max_drawdown",
+            "profit_factor",
+            "notes",
+            "version",
+            "created_at",
+            "updated_at",
+        ),
+    ),
 )
 
 ATTACHMENT_SOURCE_COLUMNS = (

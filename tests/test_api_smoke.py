@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 
 import httpx
 import pytest
@@ -164,3 +165,62 @@ def test_authenticated_business_api_lifecycle() -> None:
         assert deleted_trade.status_code == 200
         assert client.post("/api/auth/logout", headers=headers).status_code == 200
         assert client.get("/api/auth/session").status_code == 401
+
+
+@pytest.mark.skipif(
+    not API_URL or not USERNAME or not PASSWORD,
+    reason="requires a disposable running API and TEST_API_URL/TEST_ADMIN_*",
+)
+def test_authenticated_quant_strategy_lifecycle() -> None:
+    headers = {"Origin": ORIGIN}
+    strategy_name = f"SmokeQuant{uuid.uuid4().hex[:8]}"
+    strategy_payload = {
+        "name": strategy_name,
+        "fileName": f"{strategy_name}.py",
+        "sourceCode": f"class {strategy_name}: pass",
+        "timeframe": "5m",
+        "isExample": False,
+        "summary": "smoke",
+        "explanation": "# 指标\n\n## 入场\n\n## 出场\n\n## 风控\n\n## 注意事项",
+    }
+    with httpx.Client(base_url=API_URL or "", timeout=30, follow_redirects=True) as client:
+        login = client.post(
+            "/api/auth/login",
+            headers=headers,
+            json={"username": USERNAME, "password": PASSWORD},
+        )
+        assert login.status_code == 200
+        created = client.post("/api/quant/strategies", headers=headers, json=strategy_payload)
+        assert created.status_code == 200
+        strategy = created.json()
+        strategy_id = strategy["id"]
+        assert strategy["sourceCode"] == strategy_payload["sourceCode"]
+        assert client.get("/api/quant/strategies").status_code == 200
+
+        backtest = client.post(
+            f"/api/quant/strategies/{strategy_id}/backtests",
+            headers=headers,
+            json={
+                "runAt": "2099-12-31T01:00:00Z",
+                "timerange": "20990101-20991231",
+                "pairs": "BTC/USDT",
+                "timeframe": "5m",
+                "totalReturn": "12.5",
+                "winRate": "55",
+            },
+        )
+        assert backtest.status_code == 200
+        assert backtest.json()["totalReturn"] == "12.50000000"
+        detail = client.get(f"/api/quant/strategies/{strategy_id}")
+        assert detail.status_code == 200
+        assert len(detail.json()["backtests"]) == 1
+
+        conflict = client.put(
+            f"/api/quant/strategies/{strategy_id}",
+            headers=headers,
+            json={**strategy_payload, "version": strategy["version"] + 1},
+        )
+        assert conflict.status_code == 409
+        assert client.delete(f"/api/quant/strategies/{strategy_id}", headers=headers).status_code == 200
+        assert client.get(f"/api/quant/strategies/{strategy_id}").status_code == 404
+        assert client.post("/api/auth/logout", headers=headers).status_code == 200
