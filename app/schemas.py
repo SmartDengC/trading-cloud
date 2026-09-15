@@ -192,6 +192,7 @@ class MemoUpdate(ApiModel):
 class TradingRuleInput(ApiModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=20000)
+    comment: str = Field(default="", max_length=20000)
     sort_order: int = Field(default=0, ge=0, le=1_000_000)
     active: bool = True
     version: int | None = Field(default=None, ge=1)
@@ -209,6 +210,7 @@ class TradingRuleView(ApiModel):
     id: str
     title: str
     description: str
+    comment: str
     sort_order: int
     active: bool
     version: int

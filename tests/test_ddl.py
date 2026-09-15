@@ -13,6 +13,8 @@ def test_business_ddl_contains_every_migrated_table() -> None:
         assert f"CREATE TABLE {table} (" in ddl
     assert "blob_url" not in ddl
     assert "object_key text NOT NULL" in ddl
+    assert "CREATE TABLE trading_rules (" in ddl
+    assert "comment text NOT NULL DEFAULT ''" in ddl
 
 
 def test_seed_is_separate_and_idempotent() -> None:

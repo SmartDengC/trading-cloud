@@ -36,6 +36,7 @@ def downgrade() -> None:
         "trade_attachments",
         "trade_error_tags",
         "trading_options",
+        "trading_rules",
         "daily_reviews",
         "trades",
         "trade_executions",

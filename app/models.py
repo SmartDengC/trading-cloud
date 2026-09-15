@@ -359,6 +359,7 @@ class TradingRule(TimestampMixin, Base):
     )
     title: Mapped[str] = mapped_column(Text)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    comment: Mapped[str] = mapped_column(Text, default="", server_default="")
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

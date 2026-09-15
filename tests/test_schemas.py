@@ -4,7 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.errors import validation_error_message
-from app.schemas import TradeExecutionInput, TradeInput, TradingOptionUpdate, validate_review_slug
+from app.schemas import (
+    TradeExecutionInput,
+    TradeInput,
+    TradingOptionUpdate,
+    TradingRuleInput,
+    TradingRuleView,
+    validate_review_slug,
+)
 
 
 def trade_payload() -> dict[str, object]:
@@ -108,3 +115,22 @@ def test_validation_error_message_names_forbidden_input_field() -> None:
     assert validation_error_message(
         [{"loc": ("body", "id"), "msg": "Extra inputs are not permitted", "type": "extra_forbidden"}]
     ) == "不允许提交字段：id"
+
+
+def test_trading_rule_comment_is_optional_but_bounded() -> None:
+    value = TradingRuleInput(title="纪律", comment="")
+    assert value.comment == ""
+    assert TradingRuleView(
+        id="rule-1",
+        title="纪律",
+        description="说明",
+        comment="备注",
+        sort_order=1,
+        active=True,
+        version=1,
+        created_at="2026-09-15T00:00:00Z",
+        updated_at="2026-09-15T00:00:00Z",
+    ).model_dump(by_alias=True)["comment"] == "备注"
+
+    with pytest.raises(ValidationError):
+        TradingRuleInput(title="纪律", comment="x" * 20_001)

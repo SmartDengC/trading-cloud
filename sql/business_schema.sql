@@ -114,6 +114,21 @@ CREATE TABLE trading_options (
 
 CREATE UNIQUE INDEX trading_options_kind_label_uidx ON trading_options (kind, label);
 
+CREATE TABLE trading_rules (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    title text NOT NULL,
+    description text NOT NULL DEFAULT '',
+    comment text NOT NULL DEFAULT '',
+    sort_order integer NOT NULL DEFAULT 0,
+    active boolean NOT NULL DEFAULT true,
+    version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_trading_rules_sort_order ON trading_rules (sort_order);
+CREATE INDEX idx_trading_rules_active ON trading_rules (active);
+
 CREATE TABLE trade_error_tags (
     trade_id uuid NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
     option_id uuid NOT NULL REFERENCES trading_options(id) ON DELETE CASCADE,

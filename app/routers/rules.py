@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -23,6 +23,7 @@ def to_view(row: TradingRule) -> TradingRuleView:
         id=str(row.id),
         title=row.title,
         description=row.description,
+        comment=row.comment,
         sort_order=row.sort_order,
         active=row.active,
         version=row.version,
@@ -42,10 +43,21 @@ async def load_rule(db: AsyncSession, rule_id: uuid.UUID) -> TradingRule:
 async def list_rules(
     db: Annotated[AsyncSession, Depends(get_db)],
     active: Annotated[bool | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> list[TradingRuleView]:
     query = select(TradingRule).order_by(TradingRule.sort_order, TradingRule.created_at)
     if active is not None:
         query = query.where(TradingRule.active == active)
+    keyword = q.strip() if q else ""
+    if keyword:
+        pattern = f"%{keyword}%"
+        query = query.where(
+            or_(
+                TradingRule.title.ilike(pattern),
+                TradingRule.description.ilike(pattern),
+                TradingRule.comment.ilike(pattern),
+            )
+        )
     rows = (await db.scalars(query)).all()
     return [to_view(row) for row in rows]
 
@@ -64,6 +76,7 @@ async def create_rule(
     row = TradingRule(
         title=payload.title,
         description=payload.description,
+        comment=payload.comment,
         sort_order=payload.sort_order,
         active=payload.active,
     )
@@ -84,6 +97,7 @@ async def update_rule(
         raise ApiError(409, "版本冲突，请重新加载后再编辑")
     existing.title = payload.title
     existing.description = payload.description
+    existing.comment = payload.comment
     existing.sort_order = payload.sort_order
     existing.active = payload.active
     existing.version += 1
