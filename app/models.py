@@ -358,6 +358,7 @@ class TradingRule(TimestampMixin, Base):
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
     title: Mapped[str] = mapped_column(Text)
+    rule_type: Mapped[str] = mapped_column(Text, default="", server_default="")
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     comment: Mapped[str] = mapped_column(Text, default="", server_default="")
     sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 
 def to_camel(value: str) -> str:
@@ -205,24 +205,26 @@ class MemoUpdate(ApiModel):
 
 class TradingRuleInput(ApiModel):
     title: str = Field(min_length=1, max_length=200)
+    rule_type: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=20000)
     comment: str = Field(default="", max_length=20000)
     sort_order: int = Field(default=0, ge=0, le=1_000_000)
     active: bool = True
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("title")
+    @field_validator("title", "rule_type")
     @classmethod
-    def strip_title(cls, value: str) -> str:
+    def strip_rule_text(cls, value: str, info: ValidationInfo) -> str:
         value = value.strip()
         if not value:
-            raise ValueError("标题不能为空")
+            raise ValueError("标题不能为空" if info.field_name == "title" else "规则类型不能为空")
         return value
 
 
 class TradingRuleView(ApiModel):
     id: str
     title: str
+    rule_type: str
     description: str
     comment: str
     sort_order: int

@@ -117,6 +117,7 @@ CREATE UNIQUE INDEX trading_options_kind_label_uidx ON trading_options (kind, la
 CREATE TABLE trading_rules (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     title text NOT NULL,
+    rule_type text NOT NULL DEFAULT '',
     description text NOT NULL DEFAULT '',
     comment text NOT NULL DEFAULT '',
     sort_order integer NOT NULL DEFAULT 0,

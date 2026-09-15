@@ -6,6 +6,100 @@
 
 不使用 Docker、直接在宿主机运行 API 的步骤请参阅 [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)。
 
+## 本地启动
+
+以下方式在宿主机直接运行 FastAPI，PostgreSQL 和 MinIO 也需要在本机启动。完整配置说明见 [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)。
+
+### 1. 环境要求
+
+- Python 3.14
+- PostgreSQL 17
+- MinIO 和 MinIO Client（`mc`）
+- `uv`
+
+### 2. 配置本地环境
+
+```bash
+cd /path/to/trading-cloud
+cp .env.example .env
+```
+
+修改 `.env` 中的本地连接配置：
+
+```dotenv
+TRADING_DATABASE_URL=postgresql+psycopg://trading:你的数据库密码@127.0.0.1:5432/trading
+TRADING_FRONTEND_ORIGINS=http://localhost:3000
+TRADING_PUBLIC_BASE_URL=http://localhost:8000
+TRADING_SESSION_SECURE=false
+TRADING_SESSION_COOKIE_DOMAIN=
+TRADING_MINIO_ENDPOINT=127.0.0.1:9000
+TRADING_MINIO_ACCESS_KEY=trading-minio
+TRADING_MINIO_SECRET_KEY=你的MinIO密码
+TRADING_MINIO_BUCKET=trading-attachments
+TRADING_MINIO_SECURE=false
+```
+
+`TRADING_ADMIN_USERNAME` 保持为管理员用户名。登录接口还需要配置
+`TRADING_ADMIN_PASSWORD_HASH` 和 `TRADING_LOGIN_PRIVATE_KEY_B64`；管理员密码在安装依赖后生成，登录私钥可以提前生成：
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-login-private.pem
+openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
+  | base64 | tr -d '\n'
+```
+
+将命令输出的 Base64 内容写入 `TRADING_LOGIN_PRIVATE_KEY_B64`。
+
+### 3. 启动 PostgreSQL 和 MinIO
+
+```bash
+psql postgres -c "CREATE ROLE trading LOGIN PASSWORD '你的数据库密码';"
+psql postgres -c "CREATE DATABASE trading OWNER trading;"
+
+mkdir -p minio-data
+MINIO_ROOT_USER=trading-minio \
+MINIO_ROOT_PASSWORD='你的MinIO密码' \
+minio server ./minio-data --console-address :9001
+```
+
+保持 MinIO 终端运行，另开终端创建附件桶：
+
+```bash
+mc alias set local http://127.0.0.1:9000 trading-minio '你的MinIO密码'
+mc mb --ignore-existing local/trading-attachments
+mc anonymous set none local/trading-attachments
+```
+
+如果 PostgreSQL 用户或数据库已经存在，可以跳过对应的创建命令。
+
+### 4. 安装依赖、迁移数据库并启动 API
+
+```bash
+uv sync --dev
+uv run python -m app.security '你的登录密码'
+uv run alembic upgrade head
+```
+
+将密码命令输出的 Argon2 hash 写入 `TRADING_ADMIN_PASSWORD_HASH`，然后启动 API：
+
+```bash
+uv run fastapi dev app/main.py --host 127.0.0.1 --port 8000
+```
+
+启动后访问：
+
+- API：<http://localhost:8000>
+- Swagger：<http://localhost:8000/docs>
+- 存活检查：<http://localhost:8000/health/live>
+- 就绪检查：<http://localhost:8000/health/ready>
+- MinIO 控制台：<http://127.0.0.1:9001>
+
+如果希望使用 Docker 同时启动本地 PostgreSQL、MinIO 和 API，请执行：
+
+```bash
+docker compose --profile local-infra -f compose.yaml -f compose.dev.yaml up -d --build
+```
+
 ## Docker 启动
 
 ### 1. 准备 Compose

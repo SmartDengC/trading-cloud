@@ -118,11 +118,12 @@ def test_validation_error_message_names_forbidden_input_field() -> None:
 
 
 def test_trading_rule_comment_is_optional_but_bounded() -> None:
-    value = TradingRuleInput(title="纪律", comment="")
+    value = TradingRuleInput(title="纪律", rule_type="entry", comment="")
     assert value.comment == ""
     assert TradingRuleView(
         id="rule-1",
         title="纪律",
+        rule_type="entry",
         description="说明",
         comment="备注",
         sort_order=1,
@@ -131,6 +132,29 @@ def test_trading_rule_comment_is_optional_but_bounded() -> None:
         created_at="2026-09-15T00:00:00Z",
         updated_at="2026-09-15T00:00:00Z",
     ).model_dump(by_alias=True)["comment"] == "备注"
+    assert TradingRuleView(
+        id="rule-1",
+        title="纪律",
+        rule_type="entry",
+        description="说明",
+        comment="备注",
+        sort_order=1,
+        active=True,
+        version=1,
+        created_at="2026-09-15T00:00:00Z",
+        updated_at="2026-09-15T00:00:00Z",
+    ).model_dump(by_alias=True)["ruleType"] == "entry"
 
     with pytest.raises(ValidationError):
         TradingRuleInput(title="纪律", comment="x" * 20_001)
+
+
+def test_trading_rule_input_requires_rule_type() -> None:
+    with pytest.raises(ValidationError):
+        TradingRuleInput(title="纪律")
+
+
+def test_trading_rule_input_accepts_rule_type_camel_case_alias() -> None:
+    value = TradingRuleInput.model_validate({"title": "纪律", "ruleType": "entry"})
+
+    assert value.rule_type == "entry"

@@ -22,6 +22,7 @@ def to_view(row: TradingRule) -> TradingRuleView:
     return TradingRuleView(
         id=str(row.id),
         title=row.title,
+        rule_type=row.rule_type,
         description=row.description,
         comment=row.comment,
         sort_order=row.sort_order,
@@ -75,6 +76,7 @@ async def create_rule(
 ) -> TradingRuleView:
     row = TradingRule(
         title=payload.title,
+        rule_type=payload.rule_type,
         description=payload.description,
         comment=payload.comment,
         sort_order=payload.sort_order,
@@ -96,6 +98,7 @@ async def update_rule(
     if payload.version is not None and payload.version != existing.version:
         raise ApiError(409, "版本冲突，请重新加载后再编辑")
     existing.title = payload.title
+    existing.rule_type = payload.rule_type
     existing.description = payload.description
     existing.comment = payload.comment
     existing.sort_order = payload.sort_order
