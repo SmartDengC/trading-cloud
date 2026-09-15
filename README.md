@@ -4,11 +4,11 @@
 
 腾讯云运行 PostgreSQL 和现有 MinIO、阿里云运行 API/Caddy、Vercel 同源转发 API 的生产方案见 [deploy/README.md](deploy/README.md)。
 
-不使用 Docker、直接在宿主机运行 API 的步骤请参阅 [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)。
+不使用 Docker、直接在宿主机运行 API 的步骤请参阅 [LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)。
 
 ## 本地启动
 
-以下方式在宿主机直接运行 FastAPI，PostgreSQL 和 MinIO 也需要在本机启动。完整配置说明见 [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)。
+以下方式在宿主机直接运行 FastAPI，PostgreSQL 和 MinIO 也需要在本机启动。完整配置说明见 [LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)。
 
 ### 1. 环境要求
 
