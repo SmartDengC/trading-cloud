@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from string import Formatter
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +13,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://trading:trading@localhost:5432/trading"
     frontend_origins: str = "http://localhost:3000"
     public_base_url: str = "http://localhost:8000"
+    sina_quotes_url: str = "https://hq.sinajs.cn/list={symbols}"
 
     admin_username: str = "admin"
     admin_password_hash: str = ""
@@ -30,6 +32,21 @@ class Settings(BaseSettings):
     @classmethod
     def strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
+
+    @field_validator("sina_quotes_url")
+    @classmethod
+    def validate_sina_quotes_url(cls, value: str) -> str:
+        try:
+            parts = list(Formatter().parse(value))
+        except ValueError as error:
+            raise ValueError("sina_quotes_url must contain exactly one {symbols} placeholder") from error
+        fields = [field_name for _, field_name, _, _ in parts if field_name]
+        if fields != ["symbols"] or any(
+            field_name == "symbols" and (format_spec or conversion)
+            for _, field_name, format_spec, conversion in parts
+        ):
+            raise ValueError("sina_quotes_url must contain exactly one {symbols} placeholder")
+        return value
 
     @property
     def frontend_origin_list(self) -> list[str]:

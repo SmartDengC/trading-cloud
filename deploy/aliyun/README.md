@@ -145,7 +145,16 @@ docker compose up -d --build      # 代码更新后重建并重启
 
 ```dotenv
 TRADING_FRONTEND_ORIGINS=https://se.vdcc.cn,http://FRONTEND_PUBLIC_IP:8090,http://localhost:8080
+TRADING_SINA_QUOTES_URL=http://FRONTEND_PUBLIC_IP:8091/sina-quotes/{symbols}
 ```
+
+由于部分阿里云出口 IP 会被新浪行情接口拒绝，行情请求经腾讯云前端的受限中继转发。将以下配置加入 `.env`（`FRONTEND_PUBLIC_IP` 替换为腾讯云前端公网 IP）：
+
+```dotenv
+TRADING_SINA_QUOTES_URL=http://FRONTEND_PUBLIC_IP:8091/sina-quotes/{symbols}
+```
+
+腾讯云安全组的 TCP 8091 必须仅允许本 API 服务器公网出口 IP 访问。
 
 注意 CORS origin 必须包含协议，`localhost:8080` 要写成 `http://localhost:8080`。修改后执行：
 

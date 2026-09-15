@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.database import get_db
 from app.errors import ApiError
 from app.market_quotes import SinaQuoteClient, SinaQuoteError
@@ -22,7 +23,7 @@ from app.schemas import (
 from app.security import current_session, require_origin
 
 router = APIRouter(prefix="/api/market", tags=["market"], dependencies=[Depends(current_session)])
-quote_client = SinaQuoteClient()
+quote_client = SinaQuoteClient(quotes_url=get_settings().sina_quotes_url)
 
 
 async def close_quote_client() -> None:

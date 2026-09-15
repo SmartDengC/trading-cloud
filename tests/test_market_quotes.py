@@ -4,7 +4,7 @@ from datetime import timedelta
 import httpx
 import pytest
 
-from app.market_quotes import SinaQuoteClient, SinaQuoteError, parse_sina_quotes
+from app.market_quotes import SinaQuoteClient, SinaQuoteError, _split_symbols, parse_sina_quotes
 
 
 def test_parse_sina_quotes_normalizes_mainland_quote() -> None:
@@ -87,14 +87,71 @@ def test_parse_sina_quotes_normalizes_us_index() -> None:
     assert result["gb_ixic"].quote_time.strftime("%Y-%m-%d %H:%M:%S") == "2026-09-02 05:30:00"
 
 
+@pytest.mark.parametrize("status_code", [403, 502, 504])
 @pytest.mark.asyncio
-async def test_sina_client_translates_upstream_failure() -> None:
+async def test_sina_client_translates_upstream_failure(
+    status_code: int, caplog: pytest.LogCaptureFixture
+) -> None:
     async def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(503)
+        return httpx.Response(status_code)
 
     client = SinaQuoteClient(transport=httpx.MockTransport(handler))
     with pytest.raises(SinaQuoteError, match="新浪行情服务暂不可用"):
         await client.fetch(["sh000001"])
+
+    assert "error_type=HTTPStatusError" in caplog.text
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_sina_client_translates_read_timeout(caplog: pytest.LogCaptureFixture) -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("upstream read timed out")
+
+    client = SinaQuoteClient(transport=httpx.MockTransport(handler))
+
+    with pytest.raises(SinaQuoteError, match="新浪行情服务暂不可用"):
+        await client.fetch(["sh000001"])
+
+    assert "status=network_error" in caplog.text
+    assert "error_type=ReadTimeout" in caplog.text
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_sina_client_uses_configured_quotes_url_template() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            content=(
+                'var hq_str_sh000001="上证指数,3990.00,3952.18,3986.30,3990.00,3940.00,'
+                '2026-09-01,15:00:00";'
+            ).encode("gbk"),
+        )
+
+    client = SinaQuoteClient(
+        transport=httpx.MockTransport(handler),
+        quotes_url="http://relay.test/sina-quotes/{symbols}",
+    )
+
+    await client.fetch(["sh000001"])
+
+    assert str(requests[0].url) == "http://relay.test/sina-quotes/sh000001"
+    await client.close()
+
+
+def test_split_symbols_accounts_for_configured_url_length() -> None:
+    symbols = tuple(f"symbol{index}" for index in range(220))
+    template = "http://relay.test/sina-quotes/{symbols}"
+
+    batches = _split_symbols(symbols, template)
+
+    assert len(batches) > 1
+    assert [symbol for batch in batches for symbol in batch] == list(symbols)
+    assert all(len(template.format(symbols=",".join(batch))) <= 1800 for batch in batches)
 
 
 @pytest.mark.asyncio

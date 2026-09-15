@@ -134,12 +134,14 @@ class SinaQuoteClient:
         self,
         transport: httpx.AsyncBaseTransport | None = None,
         cache_ttl: float = SINA_CACHE_TTL_SECONDS,
+        quotes_url: str = SINA_QUOTES_URL,
     ) -> None:
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=1.0, read=2.5, write=2.5, pool=1.0),
+            timeout=httpx.Timeout(connect=2.0, read=6.0, write=2.5, pool=1.0),
             transport=transport,
             headers={"Referer": SINA_REFERER, "User-Agent": "market-diary/1.0"},
         )
+        self._quotes_url = quotes_url
         self._cache_ttl = cache_ttl
         self._cache: dict[tuple[str, ...], tuple[float, dict[str, SinaQuote]]] = {}
         self._inflight: dict[tuple[str, ...], asyncio.Task[dict[str, SinaQuote]]] = {}
@@ -169,7 +171,7 @@ class SinaQuoteClient:
 
     async def _fetch_uncached(self, symbols: tuple[str, ...]) -> dict[str, SinaQuote]:
         started = perf_counter()
-        batches = _split_symbols(symbols)
+        batches = _split_symbols(symbols, self._quotes_url)
         results = await asyncio.gather(
             *(self._fetch_batch(batch) for batch in batches), return_exceptions=True
         )
@@ -197,20 +199,25 @@ class SinaQuoteClient:
     async def _fetch_batch(self, symbols: tuple[str, ...]) -> dict[str, SinaQuote]:
         started = perf_counter()
         try:
-            response = await self._client.get(SINA_QUOTES_URL.format(symbols=",".join(symbols)))
+            response = await self._client.get(self._quotes_url.format(symbols=",".join(symbols)))
             response.raise_for_status()
         except httpx.HTTPStatusError as error:
             logger.warning(
-                "sina_quotes upstream_error symbols=%d status=%d duration_ms=%.2f",
+                "sina_quotes upstream_error symbols=%d status=%d error_type=%s error=%r duration_ms=%.2f",
                 len(symbols),
                 error.response.status_code,
+                type(error).__name__,
+                error,
                 (perf_counter() - started) * 1000,
             )
             raise SinaQuoteError("新浪行情服务暂不可用") from error
         except (httpx.HTTPError, TimeoutError) as error:
             logger.warning(
-                "sina_quotes upstream_error symbols=%d status=network_error duration_ms=%.2f",
+                "sina_quotes upstream_error symbols=%d status=network_error "
+                "error_type=%s error=%r duration_ms=%.2f",
                 len(symbols),
+                type(error).__name__,
+                error,
                 (perf_counter() - started) * 1000,
             )
             raise SinaQuoteError("新浪行情服务暂不可用") from error
@@ -242,10 +249,10 @@ def _parse_available_quotes(raw: str, symbols: tuple[str, ...]) -> dict[str, Sin
     return result
 
 
-def _split_symbols(symbols: tuple[str, ...]) -> list[tuple[str, ...]]:
+def _split_symbols(symbols: tuple[str, ...], quotes_url: str = SINA_QUOTES_URL) -> list[tuple[str, ...]]:
     batches: list[tuple[str, ...]] = []
     current: list[str] = []
-    prefix_length = len(SINA_QUOTES_URL) - len("{symbols}")
+    prefix_length = len(quotes_url) - len("{symbols}")
     current_length = prefix_length
     for symbol in symbols:
         symbol_length = len(symbol) + (1 if current else 0)
