@@ -5,6 +5,7 @@ description = "FastAPI backend for the market diary trading terminal"
 requires-python = ">=3.14,<3.15"
 dependencies = [
   "alembic>=1.16,<2",
+  "cryptography>=45,<48",
   "fastapi[standard]>=0.116,<1",
   "httpx>=0.28,<1",
   "minio>=7.2,<8",

@@ -67,7 +67,23 @@ docker compose run --rm --no-deps api python -m app.security 'your-password'
 TRADING_ADMIN_PASSWORD_HASH='$argon2id$...'
 ```
 
-### 4. 启动服务
+### 4. 生成登录加密私钥
+
+登录接口只接受前端使用公钥加密后的密码。生成一次 3072 位 RSA 私钥，将 PKCS#8 DER 内容 Base64 编码后写入 `.env`，不要将私钥提交到仓库：
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-login-private.pem
+openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
+  | base64 | tr -d '\n'
+```
+
+```dotenv
+TRADING_LOGIN_PRIVATE_KEY_B64=...
+```
+
+轮换私钥后重启 API；前端每次登录都会重新获取公钥。后端发布完成并确认 `/api/auth/encryption-key` 可用后，再发布前端。
+
+### 5. 启动服务
 
 生产环境默认连接 `.env` 中配置的外部 PostgreSQL/MinIO，Caddy 仅向公网发布 80/443：
 
@@ -99,7 +115,7 @@ docker compose -f compose.yaml -f compose.http.yaml up -d --build
 curl http://SERVER_IP:8000/health/ready
 ```
 
-HTTP 会明文传输登录凭据和会话，只用于临时联调。HTTPS 前端也不能调用 HTTP API，正式部署应恢复原环境变量并使用基础 Compose 配置。
+HTTP 仍会明文传输会话 Cookie，且公钥获取容易被中间人替换，只用于临时联调。HTTPS 前端也不能调用 HTTP API，正式部署必须恢复原环境变量并使用基础 Compose 配置。
 
 本地联调使用开发覆盖配置：
 

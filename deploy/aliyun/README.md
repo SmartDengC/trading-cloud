@@ -57,6 +57,7 @@ chmod 600 .env
 | `TRADING_MINIO_ENDPOINT` | `腾讯公网IP:9000` |
 | `TRADING_MINIO_ACCESS_KEY` / `TRADING_MINIO_SECRET_KEY` | 现有 MinIO **最小权限应用账号**（不是 root） |
 | `TRADING_ADMIN_PASSWORD_HASH` | **先留空**，启动前用第 2 步命令生成 |
+| `TRADING_LOGIN_PRIVATE_KEY_B64` | 3072 位 RSA PKCS#8 DER 的 Base64 内容，必须配置 |
 | `TRADING_API_DOMAIN` | 默认 `hahadeng.cn`（Caddy 用它申请证书） |
 
 ### 2. 生成管理员密码 hash
@@ -77,7 +78,17 @@ docker compose run --rm --no-deps api python -m app.security '你的管理员明
 > TRADING_ADMIN_PASSWORD_HASH='$argon2id$v=19$m=...'
 > ```
 
-### 3. 校验 + 构建 + 启动
+### 3. 生成登录加密私钥
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-login-private.pem
+openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
+  | base64 | tr -d '\n'
+```
+
+将输出写入 `.env` 的 `TRADING_LOGIN_PRIVATE_KEY_B64`。私钥只保存在服务器环境变量中；轮换后重启 API，并确认公钥接口恢复后再发布前端。
+
+### 4. 校验 + 构建 + 启动
 
 ```bash
 docker compose config -q          # 校验配置和变量替换
@@ -89,7 +100,7 @@ docker compose logs migrate api caddy
 
 `--build` 会触发 `context: ../..`（仓库根目录）的构建，所以**必须在 `deploy/aliyun/` 目录下执行**。
 
-### 4. 验证
+### 5. 验证
 
 ```bash
 curl --fail https://hahadeng.cn/health/ready   # 通过 Caddy + 公网域名

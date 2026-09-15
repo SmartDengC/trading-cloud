@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from string import Formatter
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     admin_username: str = "admin"
     admin_password_hash: str = ""
+    login_private_key_b64: SecretStr = SecretStr("")
     session_cookie: str = "trading_session"
     session_cookie_domain: str | None = None
     session_secure: bool = True

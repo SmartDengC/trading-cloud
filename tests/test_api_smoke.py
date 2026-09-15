@@ -1,15 +1,55 @@
 from __future__ import annotations
 
+import base64
 import os
 import uuid
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 API_URL = os.getenv("TEST_API_URL")
 ORIGIN = os.getenv("TEST_FRONTEND_ORIGIN", "http://localhost:3000")
 USERNAME = os.getenv("TEST_ADMIN_USERNAME")
 PASSWORD = os.getenv("TEST_ADMIN_PASSWORD")
+
+
+def encode_base64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def encrypted_login_payload(client: httpx.Client) -> dict[str, object]:
+    encryption_key = client.get("/api/auth/encryption-key").json()
+    public_der = base64.urlsafe_b64decode(
+        encryption_key["publicKey"] + "=" * (-len(encryption_key["publicKey"]) % 4)
+    )
+    public_key = serialization.load_der_public_key(public_der)
+    assert isinstance(public_key, rsa.RSAPublicKey)
+    aes_key = AESGCM.generate_key(bit_length=256)
+    iv = os.urandom(12)
+    username = USERNAME or ""
+    aad = f"login:v1\n{encryption_key['keyId']}\n{username}".encode()
+    ciphertext = AESGCM(aes_key).encrypt(iv, (PASSWORD or "").encode(), aad)
+    encrypted_key = public_key.encrypt(
+        aes_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return {
+        "username": username,
+        "encryptedPassword": {
+            "algorithm": encryption_key["algorithm"],
+            "keyId": encryption_key["keyId"],
+            "encryptedKey": encode_base64url(encrypted_key),
+            "iv": encode_base64url(iv),
+            "ciphertext": encode_base64url(ciphertext),
+        },
+    }
 
 
 @pytest.mark.skipif(
@@ -23,7 +63,7 @@ def test_authenticated_business_api_lifecycle() -> None:
         rejected = client.post(
             "/api/auth/login",
             headers={"Origin": "https://not-allowed.example"},
-            json={"username": USERNAME, "password": PASSWORD},
+            json=encrypted_login_payload(client),
         )
         assert rejected.status_code == 403
         assert rejected.json()["statusCode"] == 403
@@ -31,7 +71,7 @@ def test_authenticated_business_api_lifecycle() -> None:
         login = client.post(
             "/api/auth/login",
             headers=headers,
-            json={"username": USERNAME, "password": PASSWORD},
+            json=encrypted_login_payload(client),
         )
         assert login.status_code == 200
         assert client.get("/api/auth/session").json()["loggedIn"] is True
@@ -187,7 +227,7 @@ def test_authenticated_quant_strategy_lifecycle() -> None:
         login = client.post(
             "/api/auth/login",
             headers=headers,
-            json={"username": USERNAME, "password": PASSWORD},
+            json=encrypted_login_payload(client),
         )
         assert login.status_code == 200
         created = client.post("/api/quant/strategies", headers=headers, json=strategy_payload)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,7 +19,7 @@ def error_payload(status_code: int, message: str) -> dict[str, int | str]:
     return {"statusCode": status_code, "message": message}
 
 
-def validation_error_message(errors: list[dict[str, Any]]) -> str:
+def validation_error_message(errors: Sequence[dict[str, Any]]) -> str:
     first = errors[0] if errors else None
     if not first:
         return "请求内容不合法"
@@ -41,5 +42,9 @@ def install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(error_payload(exc.status_code, message), status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
-    async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
-        return JSONResponse(error_payload(400, validation_error_message(exc.errors())), status_code=400)
+    async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        status_code = 422 if request.url.path == "/api/auth/login" else 400
+        return JSONResponse(
+            error_payload(status_code, validation_error_message(exc.errors())),
+            status_code=status_code,
+        )

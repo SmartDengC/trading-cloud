@@ -52,9 +52,23 @@ def _signed_decimal(value: str | int | float | Decimal | None, label: str) -> st
     return format(number, "f")
 
 
+class EncryptedPasswordInput(ApiModel):
+    algorithm: str = Field(min_length=1, max_length=64)
+    key_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    encrypted_key: str = Field(min_length=1, max_length=1024)
+    iv: str = Field(min_length=1, max_length=64)
+    ciphertext: str = Field(min_length=1, max_length=4096)
+
+
 class LoginInput(ApiModel):
     username: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=1, max_length=500)
+    encrypted_password: EncryptedPasswordInput
+
+
+class LoginEncryptionKeyView(ApiModel):
+    algorithm: Literal["RSA-OAEP-256+A256GCM"]
+    key_id: str
+    public_key: str
 
 
 class UserView(ApiModel):
@@ -364,7 +378,7 @@ class TradeInput(ApiModel):
     did_well: str | None = Field(default=None, max_length=10_000)
     next_improvement: str | None = Field(default=None, max_length=10_000)
     version: int | None = Field(default=None, ge=1)
-    executions: list["TradeExecutionInput"] | None = Field(default=None, max_length=100)
+    executions: list[TradeExecutionInput] | None = Field(default=None, max_length=100)
 
     @field_validator("symbol", "strategy", "timeframe", "entry_reason")
     @classmethod
@@ -457,7 +471,7 @@ class TradeExecutionInput(ApiModel):
         return value.strip() or None if value is not None else None
 
     @model_validator(mode="after")
-    def validate_execution(self) -> "TradeExecutionInput":
+    def validate_execution(self) -> TradeExecutionInput:
         self.price = _decimal(self.price, "成交价") or ""
         self.quantity = _decimal(self.quantity, "成交数量") or ""
         self.fee = _decimal(self.fee, "手续费", zero=True) or "0"
@@ -491,7 +505,7 @@ class TradeView(TradeInput):
     created_at: str
     updated_at: str
     deleted_at: str | None
-    executions: list["TradeExecutionView"] = Field(default_factory=list)
+    executions: list[TradeExecutionView] = Field(default_factory=list)
 
 
 class TradeExecutionView(ApiModel):

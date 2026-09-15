@@ -130,6 +130,10 @@ docker compose config -q
 docker compose build api
 docker compose run --rm --no-deps api python -m app.security 'replace-with-admin-password'
 # 将输出写入 TRADING_ADMIN_PASSWORD_HASH 后再启动
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-login-private.pem
+openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
+  | base64 | tr -d '\n'
+# 将输出写入 TRADING_LOGIN_PRIVATE_KEY_B64；私钥只保存在服务器环境变量中
 docker compose up -d --build
 docker compose ps
 docker compose logs migrate api caddy

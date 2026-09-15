@@ -11,11 +11,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.errors import ApiError
+from app.login_crypto import (
+    LoginEncryptionError,
+    LoginEncryptionKeyMismatch,
+    LoginEncryptionNotConfigured,
+    decrypt_password,
+    get_login_encryption_key,
+)
 from app.models import AuthSession
-from app.schemas import LoginInput, SessionView, UserView
+from app.schemas import LoginEncryptionKeyView, LoginInput, SessionView, UserView
 from app.security import create_session, current_session, get_password_hash, require_origin
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+@router.get("/encryption-key", response_model=LoginEncryptionKeyView)
+async def encryption_key(
+    response: Response,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> LoginEncryptionKeyView:
+    try:
+        key = get_login_encryption_key(settings)
+    except LoginEncryptionNotConfigured as error:
+        raise ApiError(503, str(error)) from error
+    response.headers["Cache-Control"] = "private, no-store"
+    return LoginEncryptionKeyView(
+        algorithm="RSA-OAEP-256+A256GCM",
+        key_id=key.key_id,
+        public_key=key.public_key,
+    )
 
 
 @router.post("/login", response_model=SessionView, dependencies=[Depends(require_origin)])
@@ -26,10 +50,31 @@ async def login(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SessionView:
     started = monotonic()
+    try:
+        encryption_key = get_login_encryption_key(settings)
+    except LoginEncryptionNotConfigured as error:
+        raise ApiError(503, str(error)) from error
+
+    password = ""
+    try:
+        password = decrypt_password(
+            encryption_key,
+            algorithm=payload.encrypted_password.algorithm,
+            key_id=payload.encrypted_password.key_id,
+            encrypted_aes_key=payload.encrypted_password.encrypted_key,
+            iv=payload.encrypted_password.iv,
+            ciphertext=payload.encrypted_password.ciphertext,
+            username=payload.username,
+        )
+    except LoginEncryptionKeyMismatch as error:
+        raise ApiError(409, str(error)) from error
+    except LoginEncryptionError:
+        password = ""
+
     valid = bool(settings.admin_password_hash) and payload.username == settings.admin_username
-    if valid:
+    if valid and password:
         try:
-            valid = get_password_hash().verify(payload.password, settings.admin_password_hash)
+            valid = get_password_hash().verify(password, settings.admin_password_hash)
         except Exception:
             valid = False
     remaining = 0.35 - (monotonic() - started)

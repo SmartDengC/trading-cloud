@@ -46,9 +46,18 @@ TRADING_MINIO_SECURE=false
 
 TRADING_ADMIN_USERNAME=admin
 TRADING_ADMIN_PASSWORD_HASH=
+TRADING_LOGIN_PRIVATE_KEY_B64=
 ```
 
 `TRADING_FRONTEND_ORIGINS` 使用逗号分隔的显式来源白名单，必须包含发起写请求的浏览器 Origin，否则登录和其他写接口会返回 `403`。例如：`https://app.example.com,http://localhost:3000`。
+
+登录接口不再接受明文 `password` 字段。首次本地启动前生成 RSA 私钥并写入 `TRADING_LOGIN_PRIVATE_KEY_B64`：
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-login-private.pem
+openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
+  | base64 | tr -d '\n'
+```
 
 ## 3. 准备 PostgreSQL
 
