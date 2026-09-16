@@ -5,7 +5,6 @@ import base64
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import Response
 from pydantic import SecretStr, ValidationError
 
@@ -15,7 +14,6 @@ from app.login_crypto import (
     LoginEncryptionError,
     LoginEncryptionKeyMismatch,
     LoginEncryptionNotConfigured,
-    associated_data,
     decrypt_password,
     encode_base64url,
     get_login_encryption_key,
@@ -42,11 +40,8 @@ def encrypted_password_payload(
     password: str,
 ) -> dict[str, str]:
     key = get_login_encryption_key(settings)
-    aes_key = AESGCM.generate_key(bit_length=256)
-    iv = b"0123456789ab"
-    ciphertext = AESGCM(aes_key).encrypt(iv, password.encode("utf-8"), associated_data(key.key_id, "admin"))
-    encrypted_key = private_key.public_key().encrypt(
-        aes_key,
+    ciphertext = private_key.public_key().encrypt(
+        password.encode("utf-8"),
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
@@ -56,8 +51,6 @@ def encrypted_password_payload(
     return {
         "algorithm": LOGIN_ENCRYPTION_ALGORITHM,
         "key_id": key.key_id,
-        "encrypted_aes_key": encode_base64url(encrypted_key),
-        "iv": encode_base64url(iv),
         "ciphertext": encode_base64url(ciphertext),
     }
 
@@ -78,10 +71,7 @@ def test_public_key_is_stable_and_decrypts_password(login_key: tuple[Settings, r
         first,
         key_id=payload["key_id"],
         algorithm=payload["algorithm"],
-        encrypted_aes_key=payload["encrypted_aes_key"],
-        iv=payload["iv"],
-        ciphertext=payload["ciphertext"],
-        username="admin",
+        encrypted_password=payload["ciphertext"],
     ) == "secret"
 
 
@@ -97,38 +87,65 @@ async def test_encryption_key_endpoint_disables_caching(
     assert response.headers["cache-control"] == "private, no-store"
 
 
-def test_tampered_associated_data_and_key_id_are_rejected(
+def test_tampered_ciphertext_and_key_id_are_rejected(
     login_key: tuple[Settings, rsa.RSAPrivateKey],
 ) -> None:
     settings, private_key = login_key
     key = get_login_encryption_key(settings)
     payload = encrypted_password_payload(settings, private_key, "secret")
 
+    tampered = dict(payload)
+    tampered["ciphertext"] = payload["ciphertext"][:-1] + ("A" if payload["ciphertext"][-1] != "A" else "B")
     with pytest.raises(LoginEncryptionError):
         decrypt_password(
             key,
             key_id=payload["key_id"],
             algorithm=payload["algorithm"],
-            encrypted_aes_key=payload["encrypted_aes_key"],
-            iv=payload["iv"],
-            ciphertext=payload["ciphertext"],
-            username="other-user",
+            encrypted_password=tampered["ciphertext"],
         )
     with pytest.raises(LoginEncryptionKeyMismatch):
         decrypt_password(
             key,
             key_id="b" * 64,
             algorithm=payload["algorithm"],
-            encrypted_aes_key=payload["encrypted_aes_key"],
-            iv=payload["iv"],
-            ciphertext=payload["ciphertext"],
-            username="admin",
+            encrypted_password=payload["ciphertext"],
         )
+
+
+def test_password_at_rsa_plaintext_limit_is_accepted(
+    login_key: tuple[Settings, rsa.RSAPrivateKey],
+) -> None:
+    settings, private_key = login_key
+    payload = encrypted_password_payload(settings, private_key, "a" * 318)
+    key = get_login_encryption_key(settings)
+
+    assert decrypt_password(
+        key,
+        key_id=payload["key_id"],
+        algorithm=payload["algorithm"],
+        encrypted_password=payload["ciphertext"],
+    ) == "a" * 318
 
 
 def test_plaintext_login_payload_is_rejected() -> None:
     with pytest.raises(ValidationError):
         LoginInput.model_validate({"username": "admin", "password": "secret"})
+
+
+def test_legacy_hybrid_login_payload_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        LoginInput.model_validate(
+            {
+                "username": "admin",
+                "encryptedPassword": {
+                    "algorithm": "RSA-OAEP-256+A256GCM",
+                    "keyId": "a" * 64,
+                    "encryptedKey": "encrypted-key",
+                    "iv": "iv",
+                    "ciphertext": "ciphertext",
+                },
+            }
+        )
 
 
 def test_missing_private_key_is_not_usable() -> None:

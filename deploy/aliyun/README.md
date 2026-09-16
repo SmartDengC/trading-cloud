@@ -86,7 +86,7 @@ openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
   | base64 | tr -d '\n'
 ```
 
-将输出写入 `.env` 的 `TRADING_LOGIN_PRIVATE_KEY_B64`。私钥只保存在服务器环境变量中；轮换后重启 API，并确认公钥接口恢复后再发布前端。
+将输出写入 `.env` 的 `TRADING_LOGIN_PRIVATE_KEY_B64`。前端登录使用 `RSA-OAEP-256` 直接加密密码，RSA-3072 密码上限为 318 个 UTF-8 字节。私钥只保存在服务器环境变量中；轮换后重启 API，并确认公钥接口恢复后再发布前端。
 
 ### 4. 校验 + 构建 + 启动
 

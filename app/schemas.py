@@ -52,21 +52,14 @@ def _signed_decimal(value: str | int | float | Decimal | None, label: str) -> st
     return format(number, "f")
 
 
-class EncryptedPasswordInput(ApiModel):
-    algorithm: str = Field(min_length=1, max_length=64)
-    key_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
-    encrypted_key: str = Field(min_length=1, max_length=1024)
-    iv: str = Field(min_length=1, max_length=64)
-    ciphertext: str = Field(min_length=1, max_length=4096)
-
-
 class LoginInput(ApiModel):
     username: str = Field(min_length=1, max_length=120)
-    encrypted_password: EncryptedPasswordInput
+    key_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    encrypted_password: str = Field(min_length=1, max_length=1024)
 
 
 class LoginEncryptionKeyView(ApiModel):
-    algorithm: Literal["RSA-OAEP-256+A256GCM"]
+    algorithm: Literal["RSA-OAEP-256"]
     key_id: str
     public_key: str
 

@@ -8,7 +8,6 @@ import httpx
 import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 API_URL = os.getenv("TEST_API_URL")
 ORIGIN = os.getenv("TEST_FRONTEND_ORIGIN", "http://localhost:3000")
@@ -22,18 +21,14 @@ def encode_base64url(value: bytes) -> str:
 
 def encrypted_login_payload(client: httpx.Client) -> dict[str, object]:
     encryption_key = client.get("/api/auth/encryption-key").json()
+    username = USERNAME or ""
     public_der = base64.urlsafe_b64decode(
         encryption_key["publicKey"] + "=" * (-len(encryption_key["publicKey"]) % 4)
     )
     public_key = serialization.load_der_public_key(public_der)
     assert isinstance(public_key, rsa.RSAPublicKey)
-    aes_key = AESGCM.generate_key(bit_length=256)
-    iv = os.urandom(12)
-    username = USERNAME or ""
-    aad = f"login:v1\n{encryption_key['keyId']}\n{username}".encode()
-    ciphertext = AESGCM(aes_key).encrypt(iv, (PASSWORD or "").encode(), aad)
-    encrypted_key = public_key.encrypt(
-        aes_key,
+    ciphertext = public_key.encrypt(
+        (PASSWORD or "").encode(),
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
             algorithm=hashes.SHA256(),
@@ -42,13 +37,8 @@ def encrypted_login_payload(client: httpx.Client) -> dict[str, object]:
     )
     return {
         "username": username,
-        "encryptedPassword": {
-            "algorithm": encryption_key["algorithm"],
-            "keyId": encryption_key["keyId"],
-            "encryptedKey": encode_base64url(encrypted_key),
-            "iv": encode_base64url(iv),
-            "ciphertext": encode_base64url(ciphertext),
-        },
+        "keyId": encryption_key["keyId"],
+        "encryptedPassword": encode_base64url(ciphertext),
     }
 
 

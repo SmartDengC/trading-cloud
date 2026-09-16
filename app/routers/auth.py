@@ -12,6 +12,7 @@ from app.config import Settings, get_settings
 from app.database import get_db
 from app.errors import ApiError
 from app.login_crypto import (
+    LOGIN_ENCRYPTION_ALGORITHM,
     LoginEncryptionError,
     LoginEncryptionKeyMismatch,
     LoginEncryptionNotConfigured,
@@ -36,7 +37,7 @@ async def encryption_key(
         raise ApiError(503, str(error)) from error
     response.headers["Cache-Control"] = "private, no-store"
     return LoginEncryptionKeyView(
-        algorithm="RSA-OAEP-256+A256GCM",
+        algorithm=LOGIN_ENCRYPTION_ALGORITHM,
         key_id=key.key_id,
         public_key=key.public_key,
     )
@@ -59,12 +60,9 @@ async def login(
     try:
         password = decrypt_password(
             encryption_key,
-            algorithm=payload.encrypted_password.algorithm,
-            key_id=payload.encrypted_password.key_id,
-            encrypted_aes_key=payload.encrypted_password.encrypted_key,
-            iv=payload.encrypted_password.iv,
-            ciphertext=payload.encrypted_password.ciphertext,
-            username=payload.username,
+            algorithm=LOGIN_ENCRYPTION_ALGORITHM,
+            key_id=payload.key_id,
+            encrypted_password=payload.encrypted_password,
         )
     except LoginEncryptionKeyMismatch as error:
         raise ApiError(409, str(error)) from error

@@ -59,6 +59,8 @@ openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
   | base64 | tr -d '\n'
 ```
 
+登录时前端从 `/api/auth/encryption-key` 获取 RSA 公钥，使用 `RSA-OAEP-256` 直接加密密码，随后提交 `username`、`keyId` 和 Base64URL 编码的 `encryptedPassword`。RSA-3072 单次最多支持 318 个 UTF-8 字节的密码。生产环境仍必须使用 HTTPS。
+
 ## 3. 准备 PostgreSQL
 
 确保 PostgreSQL 17 已启动，然后创建用户和数据库：
@@ -170,15 +172,10 @@ uv run uvicorn app.main:app \
 
 ## 9. 登录接口检查
 
-如果 `.env` 中配置的是 `TRADING_FRONTEND_ORIGINS=http://localhost:3000`，可以使用以下命令检查登录：
+登录接口只接受前端用 `RSA-OAEP-256` 公钥加密后的密码，不能再用 `curl` 直接提交明文 `password`。启动前端后访问 `http://localhost:3000` 完成登录；也可以先确认公钥接口可用：
 
 ```bash
-curl -i \
-  -c /tmp/trading-cloud-cookie.txt \
-  -H 'Origin: http://localhost:3000' \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"你的登录密码"}' \
-  http://localhost:8000/api/auth/login
+curl -i http://localhost:8000/api/auth/encryption-key
 ```
 
 使用保存的 Cookie 检查会话：

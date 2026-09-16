@@ -50,6 +50,8 @@ openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
 
 将命令输出的 Base64 内容写入 `TRADING_LOGIN_PRIVATE_KEY_B64`。
 
+前端登录时从 `/api/auth/encryption-key` 获取公钥，使用 `RSA-OAEP-256` 直接加密密码，并提交 `username`、`keyId` 和 Base64URL 编码的 `encryptedPassword`；接口不接受明文 `password`。RSA-3072 单次最多支持 318 个 UTF-8 字节的密码。生产环境仍必须使用 HTTPS。
+
 ### 3. 启动 PostgreSQL 和 MinIO
 
 ```bash

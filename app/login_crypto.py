@@ -6,17 +6,16 @@ import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
 
-from cryptography.exceptions import InvalidTag, UnsupportedAlgorithm
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from cryptography.hazmat.primitives.ciphers import aead
 
 from app.config import Settings, get_settings
 
-LOGIN_ENCRYPTION_ALGORITHM = "RSA-OAEP-256+A256GCM"
+LOGIN_ENCRYPTION_ALGORITHM = "RSA-OAEP-256"
 LOGIN_ENCRYPTION_KEY_SIZE = 3072
-LOGIN_ENCRYPTION_IV_SIZE = 12
 LOGIN_PASSWORD_MAX_LENGTH = 500
+LOGIN_PASSWORD_MAX_BYTES = 318
 
 
 class LoginEncryptionError(ValueError):
@@ -50,10 +49,6 @@ def decode_base64url(value: str) -> bytes:
         return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
     except (ValueError, binascii.Error) as error:
         raise LoginEncryptionError("登录加密数据不合法") from error
-
-
-def associated_data(key_id: str, username: str) -> bytes:
-    return f"login:v1\n{key_id}\n{username}".encode()
 
 
 def _decode_private_key(encoded: str) -> rsa.RSAPrivateKey:
@@ -93,42 +88,33 @@ def decrypt_password(
     *,
     key_id: str,
     algorithm: str,
-    encrypted_aes_key: str,
-    iv: str,
-    ciphertext: str,
-    username: str,
+    encrypted_password: str,
 ) -> str:
     if algorithm != LOGIN_ENCRYPTION_ALGORITHM:
         raise LoginEncryptionError("登录加密数据不合法")
     if key_id != encrypted_key.key_id:
         raise LoginEncryptionKeyMismatch("登录加密密钥已更新，请重试")
 
-    encrypted_aes_key_bytes = decode_base64url(encrypted_aes_key)
-    iv_bytes = decode_base64url(iv)
-    ciphertext_bytes = decode_base64url(ciphertext)
-    if len(encrypted_aes_key_bytes) != encrypted_key.private_key.key_size // 8:
-        raise LoginEncryptionError("登录加密数据不合法")
-    if len(iv_bytes) != LOGIN_ENCRYPTION_IV_SIZE or len(ciphertext_bytes) < 16:
+    ciphertext_bytes = decode_base64url(encrypted_password)
+    if len(ciphertext_bytes) != encrypted_key.private_key.key_size // 8:
         raise LoginEncryptionError("登录加密数据不合法")
 
     try:
-        aes_key = encrypted_key.private_key.decrypt(
-            encrypted_aes_key_bytes,
+        password_bytes = encrypted_key.private_key.decrypt(
+            ciphertext_bytes,
             padding.OAEP(
                 mgf=padding.MGF1(algorithm=hashes.SHA256()),
                 algorithm=hashes.SHA256(),
                 label=None,
             ),
         )
-        password_bytes = aead.AESGCM(aes_key).decrypt(
-            iv_bytes,
-            ciphertext_bytes,
-            associated_data(key_id, username),
-        )
         password = password_bytes.decode("utf-8")
-    except (InvalidTag, ValueError, UnicodeDecodeError) as error:
+    except (ValueError, UnicodeDecodeError) as error:
         raise LoginEncryptionError("登录加密数据不合法") from error
 
-    if not 1 <= len(password) <= LOGIN_PASSWORD_MAX_LENGTH:
+    if (
+        not 1 <= len(password) <= LOGIN_PASSWORD_MAX_LENGTH
+        or len(password_bytes) > LOGIN_PASSWORD_MAX_BYTES
+    ):
         raise LoginEncryptionError("登录加密数据不合法")
     return password

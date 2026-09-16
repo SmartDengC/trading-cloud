@@ -5,7 +5,7 @@ from fastapi import Response
 
 from app.config import Settings
 from app.routers import auth as auth_router
-from app.schemas import EncryptedPasswordInput, LoginInput
+from app.schemas import LoginInput
 
 
 @pytest.mark.asyncio
@@ -24,13 +24,8 @@ async def test_login_sets_a_two_hour_cookie(monkeypatch: pytest.MonkeyPatch) -> 
     await auth_router.login(
         LoginInput(
             username="admin",
-            encrypted_password=EncryptedPasswordInput(
-                algorithm="RSA-OAEP-256+A256GCM",
-                key_id="a" * 64,
-                encrypted_key="encrypted-key",
-                iv="iv",
-                ciphertext="ciphertext",
-            ),
+            key_id="a" * 64,
+            encrypted_password="ciphertext",
         ),
         response,
         AsyncMock(),

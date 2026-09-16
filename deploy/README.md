@@ -134,6 +134,7 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-l
 openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
   | base64 | tr -d '\n'
 # 将输出写入 TRADING_LOGIN_PRIVATE_KEY_B64；私钥只保存在服务器环境变量中
+# 前端登录使用 RSA-OAEP-256 直接加密密码；RSA-3072 密码上限为 318 个 UTF-8 字节
 docker compose up -d --build
 docker compose ps
 docker compose logs migrate api caddy
