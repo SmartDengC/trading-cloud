@@ -18,6 +18,14 @@ def test_business_ddl_contains_every_migrated_table() -> None:
     assert "rule_type text NOT NULL DEFAULT ''" in ddl
 
 
+def test_trading_rule_null_normalization_migration_exists() -> None:
+    migration = (
+        ROOT / "alembic/versions/0011_normalize_trading_rule_text.py"
+    ).read_text(encoding="utf-8")
+    assert "UPDATE trading_rules SET rule_type = '' WHERE rule_type IS NULL" in migration
+    assert "ALTER TABLE trading_rules ALTER COLUMN rule_type SET NOT NULL" in migration
+
+
 def test_seed_is_separate_and_idempotent() -> None:
     ddl = (ROOT / "sql/business_schema.sql").read_text(encoding="utf-8")
     seed = (ROOT / "sql/business_seed.sql").read_text(encoding="utf-8")

@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app.models import TradingRule
-from app.routers.rules import create_rule, list_rules, update_rule
+from app.routers.rules import create_rule, list_rules, to_view, update_rule
 from app.schemas import TradingRuleInput
 
 
@@ -28,6 +28,24 @@ def test_trading_rule_model_exposes_comment_column_with_default() -> None:
 def test_trading_rule_model_exposes_rule_type_column_with_default() -> None:
     assert TradingRule.__table__.c.rule_type.nullable is False
     assert TradingRule.__table__.c.rule_type.server_default is not None
+
+
+def test_rule_view_normalizes_legacy_null_text_fields() -> None:
+    row = TradingRule(
+        id=uuid.uuid4(),
+        title="纪律",
+        description="",
+        sort_order=0,
+        active=True,
+        version=1,
+    )
+    row.rule_type = None  # type: ignore[assignment]
+    row.comment = None  # type: ignore[assignment]
+
+    view = to_view(row)
+
+    assert view.rule_type == ""
+    assert view.comment == ""
 
 
 @pytest.mark.asyncio

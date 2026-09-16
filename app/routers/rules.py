@@ -22,9 +22,9 @@ def to_view(row: TradingRule) -> TradingRuleView:
     return TradingRuleView(
         id=str(row.id),
         title=row.title,
-        rule_type=row.rule_type,
-        description=row.description,
-        comment=row.comment,
+        rule_type=row.rule_type or "",
+        description=row.description or "",
+        comment=row.comment or "",
         sort_order=row.sort_order,
         active=row.active,
         version=row.version,
