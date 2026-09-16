@@ -44,13 +44,50 @@ TRADING_MINIO_SECURE=false
 
 ```bash
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-login-private.pem
-openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
-  | base64 | tr -d '\n'
+chmod 600 /tmp/trading-login-private.pem
+openssl pkcs8 -topk8 -nocrypt \
+  -in /tmp/trading-login-private.pem \
+  -outform DER \
+  -out /tmp/trading-login-private.der
+chmod 600 /tmp/trading-login-private.der
+base64 < /tmp/trading-login-private.der | tr -d '\n'
+echo
 ```
 
-将命令输出的 Base64 内容写入 `TRADING_LOGIN_PRIVATE_KEY_B64`。
+将 `base64` 命令输出的整段内容（不要复制终端提示符）写入 `.env`：
 
-前端登录时从 `/api/auth/encryption-key` 获取公钥，使用 `RSA-OAEP-256` 直接加密密码，并提交 `username`、`keyId` 和 Base64URL 编码的 `encryptedPassword`；接口不接受明文 `password`。RSA-3072 单次最多支持 318 个 UTF-8 字节的密码。生产环境仍必须使用 HTTPS。
+```dotenv
+TRADING_LOGIN_PRIVATE_KEY_B64=生成的Base64内容
+```
+
+这是 PKCS#8 DER 二进制的 Base64，不是带有 `-----BEGIN PRIVATE KEY-----` 和
+`-----END PRIVATE KEY-----` 的 PEM 文本。值必须保持在同一行，不能包含空格、换行或
+终端提示符 `%`。临时文件使用完后可以删除：
+
+```bash
+rm -f /tmp/trading-login-private.pem /tmp/trading-login-private.der
+```
+
+写入后可在不输出私钥的情况下验证格式和位数：
+
+```bash
+line=$(sed -n 's/^TRADING_LOGIN_PRIVATE_KEY_B64=//p' .env)
+printf '%s' "$line" \
+  | openssl base64 -d -A \
+  | openssl pkcs8 -inform DER -nocrypt -out /dev/null
+
+printf '%s' "$line" \
+  | openssl base64 -d -A \
+  | openssl pkey -inform DER -text -noout 2>/dev/null \
+  | grep -E 'Private-Key|Private key'
+```
+
+第一条命令应成功退出，第二条命令应显示至少 `3072 bit`。如果看到
+`登录加密密钥配置无效`，优先检查是否误复制了 PEM 标记、换行或末尾 `%`。
+
+前端登录时从 `/api/auth/encryption-key` 获取公钥，使用
+`RSA-OAEP-256+A256GCM` 加密信封提交密码；接口不接受明文 `password`。私钥只能保存在
+后端环境变量中，不能提交到仓库、前端环境变量或构建产物。生产环境仍必须使用 HTTPS。
 
 ### 3. 启动 PostgreSQL 和 MinIO
 
@@ -165,17 +202,51 @@ TRADING_ADMIN_PASSWORD_HASH='$argon2id$...'
 
 ### 4. 生成登录加密私钥
 
-登录接口只接受前端使用公钥加密后的密码。生成一次 3072 位 RSA 私钥，将 PKCS#8 DER 内容 Base64 编码后写入 `.env`，不要将私钥提交到仓库：
+登录接口只接受前端使用公钥加密后的密码。以下命令生成一次 3072 位 RSA 私钥，并将
+PKCS#8 DER 内容转换为 Base64：
 
 ```bash
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/trading-login-private.pem
-openssl pkcs8 -topk8 -nocrypt -in /tmp/trading-login-private.pem -outform DER \
-  | base64 | tr -d '\n'
+chmod 600 /tmp/trading-login-private.pem
+openssl pkcs8 -topk8 -nocrypt \
+  -in /tmp/trading-login-private.pem \
+  -outform DER \
+  -out /tmp/trading-login-private.der
+chmod 600 /tmp/trading-login-private.der
+base64 < /tmp/trading-login-private.der | tr -d '\n'
+echo
 ```
 
+将输出的整段 Base64 内容写入阿里云服务器的 `deploy/aliyun/.env`：
+
 ```dotenv
-TRADING_LOGIN_PRIVATE_KEY_B64=...
+TRADING_LOGIN_PRIVATE_KEY_B64=生成的Base64内容
 ```
+
+不要复制终端提示符 `%`，不要添加 PEM 标记，也不要换行。写入后删除临时私钥文件：
+
+```bash
+rm -f /tmp/trading-login-private.pem /tmp/trading-login-private.der
+chmod 600 .env
+```
+
+在 `deploy/aliyun/` 目录中验证 `.env` 中的值，不会输出私钥：
+
+```bash
+line=$(sed -n 's/^TRADING_LOGIN_PRIVATE_KEY_B64=//p' .env)
+printf '%s' "$line" \
+  | openssl base64 -d -A \
+  | openssl pkcs8 -inform DER -nocrypt -out /dev/null
+
+printf '%s' "$line" \
+  | openssl base64 -d -A \
+  | openssl pkey -inform DER -text -noout 2>/dev/null \
+  | grep -E 'Private-Key|Private key'
+```
+
+第一条命令应成功退出，第二条命令应显示至少 `3072 bit`。确认配置有效后再执行
+`docker compose config -q` 和服务启动命令。修改私钥后必须重新创建 API 容器，不能只修改
+文件而不重启进程。
 
 轮换私钥后重启 API；前端每次登录都会重新获取公钥。后端发布完成并确认 `/api/auth/encryption-key` 可用后，再发布前端。
 

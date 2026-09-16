@@ -197,7 +197,7 @@ class MemoUpdate(ApiModel):
 
 
 class TradingRuleInput(ApiModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(default="", max_length=200)
     rule_type: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=20000)
     comment: str = Field(default="", max_length=20000)
@@ -209,8 +209,8 @@ class TradingRuleInput(ApiModel):
     @classmethod
     def strip_rule_text(cls, value: str, info: ValidationInfo) -> str:
         value = value.strip()
-        if not value:
-            raise ValueError("标题不能为空" if info.field_name == "title" else "规则类型不能为空")
+        if not value and info.field_name == "rule_type":
+            raise ValueError("规则类型不能为空")
         return value
 
 
@@ -225,6 +225,14 @@ class TradingRuleView(ApiModel):
     version: int
     created_at: str
     updated_at: str
+
+
+class TradingRuleListView(ApiModel):
+    rules: list[TradingRuleView]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 class QuantStrategyInput(ApiModel):

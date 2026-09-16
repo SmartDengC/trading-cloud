@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from math import ceil
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.errors import ApiError
 from app.models import TradingRule
-from app.schemas import TradingRuleInput, TradingRuleView
+from app.schemas import TradingRuleInput, TradingRuleListView, TradingRuleView
 from app.security import current_session, require_origin
 from app.trading_service import iso
 
@@ -40,27 +41,46 @@ async def load_rule(db: AsyncSession, rule_id: uuid.UUID) -> TradingRule:
     return row
 
 
-@router.get("/rules", response_model=list[TradingRuleView])
+@router.get("/rules", response_model=TradingRuleListView)
 async def list_rules(
     db: Annotated[AsyncSession, Depends(get_db)],
     active: Annotated[bool | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
-) -> list[TradingRuleView]:
-    query = select(TradingRule).order_by(TradingRule.sort_order, TradingRule.created_at)
+    rule_type: Annotated[str | None, Query(max_length=80)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 10,
+) -> TradingRuleListView:
+    filters = []
     if active is not None:
-        query = query.where(TradingRule.active == active)
+        filters.append(TradingRule.active == active)
+    if rule_type is not None and rule_type.strip():
+        filters.append(TradingRule.rule_type == rule_type.strip())
     keyword = q.strip() if q else ""
     if keyword:
         pattern = f"%{keyword}%"
-        query = query.where(
+        filters.append(
             or_(
                 TradingRule.title.ilike(pattern),
                 TradingRule.description.ilike(pattern),
                 TradingRule.comment.ilike(pattern),
             )
         )
+    total = int((await db.scalar(select(func.count(TradingRule.id)).where(*filters))) or 0)
+    query = (
+        select(TradingRule)
+        .where(*filters)
+        .order_by(TradingRule.sort_order, TradingRule.created_at, TradingRule.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     rows = (await db.scalars(query)).all()
-    return [to_view(row) for row in rows]
+    return TradingRuleListView(
+        rules=[to_view(row) for row in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=ceil(total / page_size) if total else 0,
+    )
 
 
 @router.get("/rules/{rule_id}", response_model=TradingRuleView)

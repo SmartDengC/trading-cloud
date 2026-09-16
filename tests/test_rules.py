@@ -14,10 +14,15 @@ class _ScalarResult:
 
 class _Db:
     statement = None
+    scalar_statement = None
 
     async def scalars(self, statement: object) -> _ScalarResult:
         self.statement = statement
         return _ScalarResult()
+
+    async def scalar(self, statement: object) -> int:
+        self.scalar_statement = statement
+        return 23
 
 
 def test_trading_rule_model_exposes_comment_column_with_default() -> None:
@@ -51,12 +56,24 @@ def test_rule_view_normalizes_legacy_null_text_fields() -> None:
 @pytest.mark.asyncio
 async def test_list_rules_searches_title_description_and_comment() -> None:
     db = _Db()
-    await list_rules(db, q="纪律")
+    result = await list_rules(db, q="纪律", rule_type="趋势方向", page=2, page_size=20)
 
     sql = str(db.statement)
     assert "trading_rules.title" in sql
     assert "trading_rules.description" in sql
     assert "trading_rules.comment" in sql
+    assert "trading_rules.rule_type" in sql
+    assert "trading_rules.id" in sql
+    assert result.total == 23
+    assert result.page == 2
+    assert result.page_size == 20
+    assert result.total_pages == 2
+
+
+def test_trading_rule_input_allows_blank_title_but_requires_rule_type() -> None:
+    assert TradingRuleInput(title="  ", rule_type=" 趋势方向 ").title == ""
+    with pytest.raises(ValueError):
+        TradingRuleInput(title="规则", rule_type="  ")
 
 
 class _RuleDb:
